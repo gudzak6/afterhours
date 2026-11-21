@@ -58,7 +58,7 @@ export function CoachChat() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-heading text-4xl tracking-tight">AI agent</h1>
+        <h1 className="font-heading text-2xl tracking-tight sm:text-3xl">AI agent</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
           Ask about the roster, a workout, or what to do next. Answers use the stored training history, plans, and analyses. A chat reply stays as advice.
           {activityId ? ` This conversation is attached to Garmin activity ${activityId}.` : ""}

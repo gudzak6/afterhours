@@ -185,16 +185,16 @@ export function TrainingPlan({ athleteId }: { athleteId: number }) {
 
       {selected && selectedDay ? (
         <div className="space-y-4">
-          <div className="flex items-center gap-2">
+          <div className="flex max-w-xl items-center gap-1 sm:gap-2">
             <button
               type="button"
               onClick={() => shiftWeek(-1)}
-              className="rounded-full border border-border p-2 text-muted-foreground hover:bg-muted"
+              className="shrink-0 rounded-full border border-border p-2 text-muted-foreground hover:bg-muted"
               aria-label="Previous week"
             >
               <ChevronLeft className="size-4" />
             </button>
-            <div className="grid flex-1 grid-cols-7 gap-2">
+            <div className="grid min-w-0 flex-1 grid-cols-7 gap-1 sm:gap-2">
               {days.map((item, index) => {
                 const date = parseDay(item);
                 const active = item === selectedDay;
@@ -205,12 +205,12 @@ export function TrainingPlan({ athleteId }: { athleteId: number }) {
                     type="button"
                     onClick={() => setDay(item)}
                     aria-pressed={active}
-                    className={`mx-auto flex size-14 flex-col items-center justify-center rounded-full border text-center sm:size-16 ${
+                    className={`mx-auto flex aspect-square w-full max-w-11 flex-col items-center justify-center rounded-full border text-center sm:max-w-12 ${
                       active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-foreground hover:bg-muted"
                     }`}
                   >
-                    <span className="text-[10px] tracking-wide uppercase sm:text-[11px]">{WEEKDAYS[index]}</span>
-                    <span className="text-sm font-medium sm:text-base">{date.getDate()}</span>
+                    <span className="text-[9px] tracking-wide uppercase sm:text-[10px]">{WEEKDAYS[index]}</span>
+                    <span className="text-xs font-medium sm:text-sm">{date.getDate()}</span>
                     <span className={`mt-0.5 size-1 rounded-full ${hasWorkout ? (active ? "bg-primary-foreground" : "bg-primary") : "bg-transparent"}`} />
                   </button>
                 );
@@ -219,7 +219,7 @@ export function TrainingPlan({ athleteId }: { athleteId: number }) {
             <button
               type="button"
               onClick={() => shiftWeek(1)}
-              className="rounded-full border border-border p-2 text-muted-foreground hover:bg-muted"
+              className="shrink-0 rounded-full border border-border p-2 text-muted-foreground hover:bg-muted"
               aria-label="Next week"
             >
               <ChevronRight className="size-4" />

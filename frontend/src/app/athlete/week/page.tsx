@@ -29,13 +29,20 @@ export default function AthleteWeekPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-heading text-4xl tracking-tight">Training plan</h1>
+        <h1 className="font-heading text-2xl tracking-tight sm:text-3xl">Training plan</h1>
         <p className="mt-2 text-sm text-muted-foreground">Each week is shown the way it was written in the uploaded spreadsheet.</p>
       </div>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {weeks.length === 0 ? <p className="text-sm text-muted-foreground">No plan is uploaded yet.</p> : null}
       {weeks.length > 0 ? (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
+        <div className="space-y-3 md:hidden">
+          {weeks.map((week) => (
+            <WeekCards key={week.week_start} week={week} workouts={view?.workouts ?? []} today={view?.today ?? null} />
+          ))}
+        </div>
+      ) : null}
+      {weeks.length > 0 ? (
+        <div className="hidden overflow-x-auto rounded-xl border border-border bg-card md:block">
           <table className="w-full min-w-[64rem] border-collapse text-sm">
             <thead>
               <tr className="border-b border-border text-left text-[11px] tracking-wide text-muted-foreground uppercase">
@@ -54,6 +61,35 @@ export default function AthleteWeekPage() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function WeekCards({ week, workouts, today }: { week: PlanWeek; workouts: PlannedWorkout[]; today: string | null }) {
+  return (
+    <section className={`rounded-xl border border-border bg-card p-3 ${week.in_progress ? "bg-muted/40" : ""}`}>
+      <h2 className="text-sm font-medium">
+        Week of {week.week_start.slice(5)}
+        <span className="mt-1 block text-xs font-normal text-muted-foreground">{milesLabel(week.actual_miles)} of {milesLabel(week.planned_miles)}</span>
+      </h2>
+      <div className="mt-3 space-y-2">
+        {WEEKDAYS.map((label, index) => {
+          const day = addDays(week.week_start, index);
+          const sessions = workouts.filter((workout) => workout.scheduled_date === day);
+          if (sessions.length === 0) return null;
+          return (
+            <div key={day} className={`rounded-lg px-2 py-2 ${day === today ? "bg-primary/5" : ""}`}>
+              <p className="text-[11px] tracking-wide text-muted-foreground uppercase">{label} {day.slice(5)}</p>
+              {sessions.map((workout) => (
+                <Link key={workout.id} href={`/athlete/workouts/${workout.id}`} className="mt-1 block">
+                  <p className="whitespace-pre-wrap text-sm">{planText(workout)}</p>
+                  <p className="text-[11px] tracking-wide text-muted-foreground uppercase">{workout.status.replaceAll("_", " ")}</p>
+                </Link>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

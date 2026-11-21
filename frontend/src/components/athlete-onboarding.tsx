@@ -78,7 +78,7 @@ export function AthleteSignup({
   return (
     <form onSubmit={(event) => void onSubmit(event)} className="space-y-4">
       <div>
-        <h1 className="font-heading text-4xl tracking-tight">Let’s build.</h1>
+        <h1 className="font-heading text-2xl tracking-tight sm:text-3xl">Let’s build.</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
           Tell us about your running before you connect Garmin. This is the same intake After Hours uses for new athletes.
         </p>
@@ -172,7 +172,7 @@ export function GarminConnect({
   return (
     <form onSubmit={(event) => void onSubmit(event)} className="space-y-4">
       <div>
-        <h1 className="font-heading text-4xl tracking-tight">Connect Garmin</h1>
+        <h1 className="font-heading text-2xl tracking-tight sm:text-3xl">Connect Garmin</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
           Sign in with the email and password you use for Garmin Connect. Your password is used to sign in and is not saved. The coach API key is not part of this step.
         </p>

@@ -50,7 +50,7 @@ export default function AthletesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-heading text-4xl tracking-tight">Athletes</h1>
+        <h1 className="font-heading text-2xl tracking-tight sm:text-3xl">Athletes</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
           Everyone on the roster. Open an athlete to see their training.
         </p>
@@ -64,7 +64,7 @@ export default function AthletesPage() {
           </p>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-border">
-            <table className="w-full min-w-[32rem] text-left text-sm">
+            <table className="w-full text-left text-sm">
               <thead className="text-xs tracking-wide text-muted-foreground uppercase">
                 <tr className="border-b border-border">
                   <th className="px-4 py-3 font-medium">Athlete</th>

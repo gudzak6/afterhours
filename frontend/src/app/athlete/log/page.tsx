@@ -60,7 +60,7 @@ export default function AthleteLogPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-heading text-4xl tracking-tight">Log a run</h1>
+        <h1 className="font-heading text-2xl tracking-tight sm:text-3xl">Log a run</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">Use this when a run was not recorded on Garmin. You can correct it afterward.</p>
       </div>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}

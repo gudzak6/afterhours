@@ -17,7 +17,7 @@ export default function AthleteSettingsPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="font-heading text-4xl tracking-tight">Settings</h1>
+        <h1 className="font-heading text-2xl tracking-tight sm:text-3xl">Settings</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">Your account, and the way into the coach view.</p>
       </div>
       <div className="flex flex-wrap gap-3">

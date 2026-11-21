@@ -43,7 +43,7 @@ export default function AthleteActivityPage() {
     <div className="space-y-4">
       <div>
         <p className="text-xs text-muted-foreground"><Link href="/athlete" className="hover:underline">Home</Link></p>
-        <h1 className="font-heading text-4xl tracking-tight">{activity.name || "Run"}</h1>
+        <h1 className="font-heading text-2xl tracking-tight sm:text-3xl">{activity.name || "Run"}</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           {activity.start_time_local} · {milesLabel(activity.distance_miles)} · {paceLabel(activity.pace_seconds_per_mile)} · {durationLabel(activity.duration_seconds)}
         </p>

@@ -154,7 +154,7 @@ function DayCard({
       <div className="px-4 pt-4">
         <Link href={`/activities/${activity.garmin_activity_id}`} className="inline-flex items-center gap-2 hover:underline">
           <Footprints className="size-5 shrink-0" />
-          <span className="text-2xl font-semibold tracking-tight">{activity.name || "Run"}</span>
+          <span className="text-lg font-semibold tracking-tight sm:text-xl">{activity.name || "Run"}</span>
         </Link>
         <PlannedGhost athleteId={row.athleteId} planned={row.planned} />
       </div>
@@ -207,7 +207,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-1 text-xl font-semibold tracking-tight sm:text-2xl">{value}</dd>
+      <dd className="mt-1 text-base font-semibold tracking-tight sm:text-lg">{value}</dd>
     </div>
   );
 }
@@ -329,17 +329,17 @@ function WeekStrip({
 }) {
   const days = WEEKDAYS.map((_, index) => shiftDay(weekStart, index));
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2">
+    <div className="space-y-3">
+      <div className="flex max-w-xl items-center gap-1 sm:gap-2">
         <button
           type="button"
           onClick={() => onShiftWeek(-1)}
-          className="rounded-full border border-border p-2 text-muted-foreground hover:bg-muted"
+          className="shrink-0 rounded-full border border-border p-2 text-muted-foreground hover:bg-muted"
           aria-label="Previous week"
         >
           <ChevronLeft className="size-4" />
         </button>
-        <div className="grid flex-1 grid-cols-7 gap-2">
+        <div className="grid min-w-0 flex-1 grid-cols-7 gap-1 sm:gap-2">
           {days.map((day) => {
             const date = parseDay(day);
             const selected = day === selectedDay;
@@ -349,14 +349,14 @@ function WeekStrip({
                 type="button"
                 onClick={() => onSelect(day)}
                 aria-pressed={selected}
-                className={`mx-auto flex size-14 flex-col items-center justify-center rounded-full border text-center sm:size-16 ${
+                className={`mx-auto flex aspect-square w-full max-w-11 flex-col items-center justify-center rounded-full border text-center sm:max-w-12 ${
                   selected
                     ? "border-primary bg-primary text-primary-foreground"
                     : "border-border bg-card text-foreground hover:bg-muted"
                 }`}
               >
-                <span className="text-[10px] tracking-wide uppercase sm:text-[11px]">{WEEKDAYS[date.getDay()]}</span>
-                <span className="text-sm font-medium sm:text-base">{date.getDate()}</span>
+                <span className="text-[9px] tracking-wide uppercase sm:text-[10px]">{WEEKDAYS[date.getDay()]}</span>
+                <span className="text-xs font-medium sm:text-sm">{date.getDate()}</span>
               </button>
             );
           })}
@@ -364,7 +364,7 @@ function WeekStrip({
         <button
           type="button"
           onClick={() => onShiftWeek(1)}
-          className="rounded-full border border-border p-2 text-muted-foreground hover:bg-muted"
+          className="shrink-0 rounded-full border border-border p-2 text-muted-foreground hover:bg-muted"
           aria-label="Next week"
         >
           <ChevronRight className="size-4" />
@@ -491,7 +491,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {!dashboard && !error ? <p className="text-sm text-muted-foreground">Loading the roster…</p> : null}
 
@@ -569,7 +569,7 @@ export default function DashboardPage() {
               )}
             </CardContent>
           </Card>
-          <h2 className="font-heading text-2xl tracking-tight">Athletes runs today</h2>
+          <h2 className="font-heading text-xl tracking-tight">Athletes runs today</h2>
           {shiftDay(selectedDay, -parseDay(selectedDay).getDay()) !== dashboard.week_start ? (
             <p className="text-sm text-muted-foreground">Loading {dayLabel(selectedDay)}…</p>
           ) : rowsForDay(dashboard, selectedDay).length === 0 ? (

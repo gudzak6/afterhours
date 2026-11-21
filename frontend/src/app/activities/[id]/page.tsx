@@ -96,7 +96,7 @@ export default function ActivityDetailPage() {
           <Link href="/activities" className="text-sm text-muted-foreground hover:underline">
             Activities
           </Link>
-          <h1 className="font-heading mt-2 text-4xl tracking-tight">{activity.name || "Untitled activity"}</h1>
+          <h1 className="font-heading mt-2 text-2xl tracking-tight sm:text-3xl">{activity.name || "Untitled activity"}</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {formatWhen(activity.start_time_local, activity.start_time_utc)} · {formatActivityType(activity.activity_type_key)}
           </p>

@@ -137,7 +137,7 @@ export default function AthleteGoalsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-heading text-4xl tracking-tight">Goals and races</h1>
+        <h1 className="font-heading text-2xl tracking-tight sm:text-3xl">Goals and races</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">The goal Coach Owen sees on the roster, plus the races you are training around.</p>
       </div>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}

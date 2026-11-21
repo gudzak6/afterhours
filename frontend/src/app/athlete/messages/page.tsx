@@ -9,7 +9,7 @@ export default function AthleteMessagesPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-heading text-4xl tracking-tight">Coach Owen</h1>
+        <h1 className="font-heading text-2xl tracking-tight sm:text-3xl">Coach Owen</h1>
         <p className="mt-2 text-sm text-muted-foreground">Messages with Coach Owen. Notes on a single workout stay on that workout.</p>
       </div>
       <Card>

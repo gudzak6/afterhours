@@ -50,7 +50,7 @@ export default function AthleteHomePage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-heading text-4xl tracking-tight">{home ? <>Hello, <AthleteName name={home.name} /></> : "Home"}</h1>
+          <h1 className="font-heading text-2xl tracking-tight sm:text-3xl">{home ? <>Hello, <AthleteName name={home.name} /></> : "Home"}</h1>
           <p className="mt-2 text-sm text-muted-foreground">Runs imported from Garmin, plus whatever is on the plan.</p>
         </div>
         {status.garmin.key_saved ? (
@@ -87,8 +87,8 @@ export default function AthleteHomePage() {
                 <ul className="divide-y divide-border">
                   {runs.map((activity) => (
                     <li key={activity.garmin_activity_id}>
-                      <Link href={`/athlete/activities/${activity.garmin_activity_id}`} className="flex flex-wrap items-baseline justify-between gap-2 py-3 hover:bg-muted">
-                        <span>
+                      <Link href={`/athlete/activities/${activity.garmin_activity_id}`} className="flex flex-col gap-1 py-3 hover:bg-muted sm:flex-row sm:flex-wrap sm:items-baseline sm:justify-between">
+                        <span className="min-w-0">
                           <span className="font-medium">{activity.name || "Run"}</span>
                           <span className="mt-1 block text-sm text-muted-foreground">{formatWhen(activity.start_time_local, null)}</span>
                         </span>

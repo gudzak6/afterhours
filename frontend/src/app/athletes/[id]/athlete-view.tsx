@@ -100,7 +100,7 @@ export default function AthletePage() {
           <p className="text-xs text-muted-foreground">
             <Link href="/athletes" className="hover:underline">All athletes</Link>
           </p>
-          <h1 className="font-heading text-4xl tracking-tight">{athlete ? <AthleteName name={athlete.display_name} /> : "Athlete"}</h1>
+          <h1 className="font-heading text-2xl tracking-tight sm:text-3xl">{athlete ? <AthleteName name={athlete.display_name} /> : "Athlete"}</h1>
           <div className="mt-2 flex flex-wrap gap-2">
             {status ? <StatusPill status={status.training_status} /> : null}
           </div>

@@ -32,7 +32,7 @@ export default function ActivitiesPage() {
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <h1 className="font-heading text-4xl tracking-tight">Activities</h1>
+          <h1 className="font-heading text-2xl tracking-tight sm:text-3xl">Activities</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {total} stored {total === 1 ? "activity" : "activities"} across the roster.
           </p>

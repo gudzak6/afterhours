@@ -53,7 +53,7 @@ export default function AthleteAnalyticsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-heading text-4xl tracking-tight">Analytics</h1>
+        <h1 className="font-heading text-2xl tracking-tight sm:text-3xl">Analytics</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">Mileage, pace, heart rate, load, records, and lactate from the runs and races stored here.</p>
       </div>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
