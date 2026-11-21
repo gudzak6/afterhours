@@ -490,7 +490,7 @@ export function updateCoach(body: Record<string, unknown>) {
 }
 
 export function createBrief(day: string) {
-  return request<{ status: string; created_at: string; report: CoachingBrief }>("/api/coach/brief", {
+  return request<{ status: string; created_at: string | null; report: CoachingBrief | null }>("/api/coach/brief", {
     method: "POST",
     body: JSON.stringify({ day }),
   });

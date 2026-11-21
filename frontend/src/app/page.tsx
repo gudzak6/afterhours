@@ -452,12 +452,21 @@ export default function DashboardPage() {
     try {
       const result = await createBrief(day);
       if (viewedDay.current !== day) return;
+      if (!result.report) {
+        setNotice("A brief is written from the coaching server. This page keeps the roster and the runs already saved.");
+        return;
+      }
       setDashboard((current) =>
         current ? { ...current, brief: result.report, brief_created_at: result.created_at } : current,
       );
     } catch (briefError) {
       if (viewedDay.current !== day) return;
-      setNotice(errorMessage(briefError));
+      const message = errorMessage(briefError);
+      setNotice(
+        /not connected|did not return|not found/i.test(message)
+          ? "A brief is written from the coaching server. This page keeps the roster and the runs already saved."
+          : message,
+      );
     } finally {
       setWritingBrief(false);
     }
@@ -561,7 +570,7 @@ export default function DashboardPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              {notice ? <p className="text-sm">{notice}</p> : null}
+              {notice ? <p className="text-sm text-muted-foreground">{notice}</p> : null}
               {writingBrief && !dashboard.brief ? (
                 <p className="text-sm text-muted-foreground">Writing the coaching brief for {dayLabel(selectedDay)}…</p>
               ) : dashboard.brief ? (
