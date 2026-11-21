@@ -167,7 +167,7 @@ export function TrainingPlan({ athleteId }: { athleteId: number }) {
           {points.length === 0 ? (
             <p className="text-sm text-muted-foreground">Add workouts to compare the block with Garmin mileage.</p>
           ) : (
-            <div className="h-56 w-full">
+            <div className="h-56 w-full min-w-0">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={points}>
                   <CartesianGrid vertical={false} stroke="oklch(0.88 0.02 80)" />
@@ -185,16 +185,26 @@ export function TrainingPlan({ athleteId }: { athleteId: number }) {
 
       {selected && selectedDay ? (
         <div className="space-y-4">
-          <div className="flex max-w-xl items-center gap-1 sm:gap-2">
+          <div className="flex max-w-xl items-center justify-between gap-2">
             <button
               type="button"
               onClick={() => shiftWeek(-1)}
-              className="shrink-0 rounded-full border border-border p-2 text-muted-foreground hover:bg-muted"
+              className="inline-flex size-11 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground hover:bg-muted"
               aria-label="Previous week"
             >
               <ChevronLeft className="size-4" />
             </button>
-            <div className="grid min-w-0 flex-1 grid-cols-7 gap-1 sm:gap-2">
+            <p className="min-w-0 text-center text-xs tracking-[0.08em] text-muted-foreground uppercase sm:tracking-[0.16em]">{dayLabel(selectedDay)}</p>
+            <button
+              type="button"
+              onClick={() => shiftWeek(1)}
+              className="inline-flex size-11 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground hover:bg-muted"
+              aria-label="Next week"
+            >
+              <ChevronRight className="size-4" />
+            </button>
+          </div>
+          <div className="grid max-w-xl grid-cols-7 gap-1 sm:gap-2">
               {days.map((item, index) => {
                 const date = parseDay(item);
                 const active = item === selectedDay;
@@ -205,27 +215,18 @@ export function TrainingPlan({ athleteId }: { athleteId: number }) {
                     type="button"
                     onClick={() => setDay(item)}
                     aria-pressed={active}
-                    className={`mx-auto flex aspect-square w-full max-w-11 flex-col items-center justify-center rounded-full border text-center sm:max-w-12 ${
+                    className={`mx-auto flex aspect-square w-full max-w-12 flex-col items-center justify-center rounded-full border text-center ${
                       active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-foreground hover:bg-muted"
                     }`}
                   >
-                    <span className="text-[9px] tracking-wide uppercase sm:text-[10px]">{WEEKDAYS[index]}</span>
-                    <span className="text-xs font-medium sm:text-sm">{date.getDate()}</span>
+                    <span className="text-[9px] leading-none tracking-wide uppercase max-[380px]:hidden sm:text-[10px]">{WEEKDAYS[index]}</span>
+                    <span className="text-[10px] leading-none uppercase min-[381px]:hidden">{WEEKDAYS[index].slice(0, 1)}</span>
+                    <span className="text-xs font-medium leading-none sm:text-sm">{date.getDate()}</span>
                     <span className={`mt-0.5 size-1 rounded-full ${hasWorkout ? (active ? "bg-primary-foreground" : "bg-primary") : "bg-transparent"}`} />
                   </button>
                 );
               })}
-            </div>
-            <button
-              type="button"
-              onClick={() => shiftWeek(1)}
-              className="shrink-0 rounded-full border border-border p-2 text-muted-foreground hover:bg-muted"
-              aria-label="Next week"
-            >
-              <ChevronRight className="size-4" />
-            </button>
           </div>
-          <p className="text-xs tracking-[0.16em] text-muted-foreground uppercase">{dayLabel(selectedDay)}</p>
         </div>
       ) : null}
 

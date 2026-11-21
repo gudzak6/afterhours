@@ -121,7 +121,7 @@ function EffortTime({
       )}
       <button
         type="button"
-        className="text-xs text-muted-foreground underline"
+        className="inline-flex min-h-11 items-center px-2 text-sm text-muted-foreground underline"
         onClick={() => {
           setDraft(effort.duration_seconds == null ? "" : time);
           setError(null);

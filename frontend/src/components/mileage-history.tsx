@@ -70,11 +70,11 @@ export function MileageHistory({ chart }: { chart: MileageChart }) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-sm font-medium">Activities for {rangeLabel(chart.week_start, chart.week_end)}</p>
-          <p className="mt-2 text-lg font-semibold tracking-tight">
+          <p className="mt-2 flex flex-wrap gap-x-2 text-lg font-semibold tracking-tight">
             {chart.distance_miles == null ? "—" : `${chart.distance_miles.toFixed(1)} mi`}
-            <span className="mx-2 font-normal text-muted-foreground">|</span>
+            <span className="font-normal text-muted-foreground">|</span>
             {hoursLabel(chart.duration_seconds)}
-            <span className="mx-2 font-normal text-muted-foreground">|</span>
+            <span className="font-normal text-muted-foreground">|</span>
             {chart.elevation_feet == null ? "—" : `${Math.round(chart.elevation_feet)} ft`}
           </p>
         </div>
@@ -102,7 +102,7 @@ export function MileageHistory({ chart }: { chart: MileageChart }) {
           {view === "weeks" ? "Weekly mileage appears after activities with distance are imported." : "No runs with distance are stored for this week."}
         </p>
       ) : (
-        <div className="h-64 w-full">
+        <div className="h-64 w-full min-w-0">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={points} barCategoryGap={view === "weeks" ? "20%" : "30%"}>
               <CartesianGrid vertical={false} stroke="oklch(0.88 0.02 80)" />

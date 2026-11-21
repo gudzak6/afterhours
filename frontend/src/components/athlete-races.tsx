@@ -120,7 +120,7 @@ export function AthleteRaces({
       </CardHeader>
       <CardContent className="space-y-3">
         {goals.races.length === 0 && !adding ? (
-          <button type="button" onClick={() => setAdding(true)} className="text-sm font-medium underline">
+          <button type="button" onClick={() => setAdding(true)} className="inline-flex min-h-11 items-center text-sm font-medium underline">
             Add a race
           </button>
         ) : null}
@@ -148,7 +148,7 @@ export function AthleteRaces({
                         onClick={() => void choose(race)}
                         aria-pressed={goal}
                         aria-label={goal ? `${race.name} is the race they are training for` : `Train for ${race.name}`}
-                        className={goal ? "text-foreground" : "text-muted-foreground hover:text-foreground"}
+                        className={`inline-flex size-11 shrink-0 items-center justify-center ${goal ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
                       >
                         <Star className={`size-4 ${goal ? "fill-current" : ""}`} />
                       </button>

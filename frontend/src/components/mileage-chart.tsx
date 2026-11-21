@@ -24,7 +24,7 @@ export function MileageChart({ summary }: { summary: TrainingSummary }) {
   }
 
   return (
-    <div className="h-48 w-full">
+    <div className="h-48 w-full min-w-0">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={points} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
           <CartesianGrid vertical={false} stroke="oklch(0.88 0.02 80)" />

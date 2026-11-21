@@ -36,7 +36,7 @@ export function ActivityCharts({ series }: { series: SeriesPoint[] }) {
           <p className="mb-2 text-sm text-muted-foreground">
             Pace from sample speed. Gaps stay blank when speed is missing or zero. Samples slower than 15:00 per mile stay in the lap table and are left off this chart.
           </p>
-          <div className="h-56 w-full">
+          <div className="h-56 w-full min-w-0">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={points}>
                 <CartesianGrid vertical={false} stroke="oklch(0.88 0.02 80)" />
@@ -59,7 +59,7 @@ export function ActivityCharts({ series }: { series: SeriesPoint[] }) {
       {hasHeart ? (
         <div>
           <p className="mb-2 text-sm text-muted-foreground">Heart rate from the FIT record stream.</p>
-          <div className="h-48 w-full">
+          <div className="h-48 w-full min-w-0">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={points}>
                 <CartesianGrid vertical={false} stroke="oklch(0.88 0.02 80)" />

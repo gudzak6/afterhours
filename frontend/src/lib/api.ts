@@ -465,7 +465,7 @@ export async function getDashboard(day?: string) {
   try {
     return await request<CoachDashboard>(`/api/coach/dashboard${query}`);
   } catch (error) {
-    if (!(error instanceof ApiError) || error.status < 500 || typeof error.body !== "string") throw error;
+    if (!serverMissing(error)) throw error;
     const [{ createClient }, { loadAccountDashboard }] = await Promise.all([
       import("@/utils/supabase/client"),
       import("@/lib/account-dashboard"),

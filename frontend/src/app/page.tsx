@@ -240,33 +240,38 @@ function AnalysisModal({
   if (!activity) return null;
   const kind = activity.analysis_kind === "easy" ? "Easy run" : activity.analysis_kind === "workout" ? "Workout analysis" : "AI analysis";
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-4 sm:items-center" onClick={onClose}>
+    <div
+      className="fixed inset-x-0 top-0 z-[80] flex h-dvh items-end justify-center bg-black/45 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(6.5rem,env(safe-area-inset-bottom))] sm:items-center sm:p-6"
+      onClick={onClose}
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="analysis-title"
-        className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-xl border border-border bg-card p-5 shadow-2xl"
+        className="flex max-h-full w-full max-w-lg flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3">
-          <div>
+        <div className="flex items-start justify-between gap-3 px-5 pt-5">
+          <div className="min-w-0">
             <p className="text-xs tracking-wide text-muted-foreground uppercase">{kind}</p>
             <h2 id="analysis-title" className="mt-1 text-xl font-semibold">{activity.name || "Run"}</h2>
             {athleteName ? <p className="text-sm text-muted-foreground"><AthleteName name={athleteName} /></p> : null}
           </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="rounded-full p-1 text-muted-foreground hover:bg-muted">
+          <button type="button" onClick={onClose} aria-label="Close" className="inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted">
             <X className="size-4" />
           </button>
         </div>
-        <p className="mt-4 text-sm leading-6 whitespace-pre-wrap">
-          {busy && !activity.analysis_summary
-            ? "Writing the analysis…"
-            : activity.analysis_summary || "No analysis saved for this activity."}
-        </p>
-        {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
-        <div className="mt-5 flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose}>Close</Button>
-          <Button type="button" disabled={busy} onClick={() => onRun(activity.garmin_activity_id)}>
+        <div className="overflow-y-auto px-5 py-4">
+          <p className="text-sm leading-6 whitespace-pre-wrap">
+            {busy && !activity.analysis_summary
+              ? "Writing the analysis…"
+              : activity.analysis_summary || "No analysis saved for this activity."}
+          </p>
+          {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
+        </div>
+        <div className="flex flex-col gap-2 border-t border-border px-5 py-4 sm:flex-row sm:justify-end">
+          <Button type="button" variant="outline" className="h-11 w-full sm:h-8 sm:w-auto" onClick={onClose}>Close</Button>
+          <Button type="button" className="h-11 w-full sm:h-8 sm:w-auto" disabled={busy} onClick={() => onRun(activity.garmin_activity_id)}>
             {busy ? "Writing…" : activity.analysis_summary ? "Write again" : "Run analysis"}
           </Button>
         </div>
@@ -330,17 +335,27 @@ function WeekStrip({
 }) {
   const days = WEEKDAYS.map((_, index) => shiftDay(weekStart, index));
   return (
-    <div className="space-y-3">
-      <div className="flex max-w-xl items-center gap-1 sm:gap-2">
+    <div className="max-w-xl space-y-3">
+      <div className="flex items-center justify-between gap-2">
         <button
           type="button"
           onClick={() => onShiftWeek(-1)}
-          className="shrink-0 rounded-full border border-border p-2 text-muted-foreground hover:bg-muted"
+          className="inline-flex size-11 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground hover:bg-muted"
           aria-label="Previous week"
         >
           <ChevronLeft className="size-4" />
         </button>
-        <div className="grid min-w-0 flex-1 grid-cols-7 gap-1 sm:gap-2">
+        <p className="min-w-0 text-center text-xs tracking-[0.08em] text-muted-foreground uppercase sm:tracking-[0.16em]">{dayLabel(selectedDay)}</p>
+        <button
+          type="button"
+          onClick={() => onShiftWeek(1)}
+          className="inline-flex size-11 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground hover:bg-muted"
+          aria-label="Next week"
+        >
+          <ChevronRight className="size-4" />
+        </button>
+      </div>
+      <div className="grid grid-cols-7 gap-1 sm:gap-2">
           {days.map((day) => {
             const date = parseDay(day);
             const selected = day === selectedDay;
@@ -350,34 +365,25 @@ function WeekStrip({
                 type="button"
                 onClick={() => onSelect(day)}
                 aria-pressed={selected}
-                className={`mx-auto flex aspect-square w-full max-w-11 flex-col items-center justify-center rounded-full border text-center sm:max-w-12 ${
+                className={`mx-auto flex aspect-square w-full max-w-12 flex-col items-center justify-center rounded-full border text-center ${
                   selected
                     ? "border-primary bg-primary text-primary-foreground"
                     : "border-border bg-card text-foreground hover:bg-muted"
                 }`}
               >
-                <span className="text-[9px] tracking-wide uppercase sm:text-[10px]">{WEEKDAYS[date.getDay()]}</span>
-                <span className="text-xs font-medium sm:text-sm">{date.getDate()}</span>
+                <span className="text-[9px] leading-none tracking-wide uppercase max-[380px]:hidden sm:text-[10px]">{WEEKDAYS[date.getDay()]}</span>
+                <span className="text-[10px] leading-none uppercase min-[381px]:hidden">{WEEKDAYS[date.getDay()].slice(0, 1)}</span>
+                <span className="text-xs font-medium leading-none sm:text-sm">{date.getDate()}</span>
               </button>
             );
           })}
-        </div>
-        <button
-          type="button"
-          onClick={() => onShiftWeek(1)}
-          className="shrink-0 rounded-full border border-border p-2 text-muted-foreground hover:bg-muted"
-          aria-label="Next week"
-        >
-          <ChevronRight className="size-4" />
-        </button>
       </div>
-      <div className="flex items-center gap-3">
-        <p className="text-xs tracking-[0.16em] text-muted-foreground uppercase">{dayLabel(selectedDay)}</p>
+      <div>
         <button
           type="button"
           onClick={onReload}
           disabled={reloading || syncing}
-          className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground hover:bg-muted disabled:opacity-60"
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-border px-4 text-xs text-muted-foreground hover:bg-muted disabled:opacity-60"
         >
           <RefreshCw className={`size-3.5 ${reloading || syncing ? "animate-spin" : ""}`} />
           {syncing ? "Syncing" : "Sync Garmin"}
@@ -400,7 +406,6 @@ export default function DashboardPage() {
   const [writingBrief, setWritingBrief] = useState(false);
   const requestId = useRef(0);
   const viewedDay = useRef<string | null>(null);
-  const openedBrief = useRef(false);
   viewedDay.current = selectedDay;
 
   const load = useCallback(async (day?: string) => {
@@ -441,30 +446,9 @@ export default function DashboardPage() {
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  const waitForStoredBrief = useCallback(async (day: string) => {
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      await new Promise((resolve) => window.setTimeout(resolve, 3000));
-      if (viewedDay.current !== day) return false;
-      try {
-        const next = await getDashboard(day);
-        if (viewedDay.current !== day) return false;
-        if (next.brief) {
-          setDashboard((current) =>
-            current ? { ...current, brief: next.brief, brief_created_at: next.brief_created_at } : next,
-          );
-          return true;
-        }
-      } catch {
-        // Keep looking. The model may still be writing.
-      }
-    }
-    return false;
-  }, []);
-
-  const writeBrief = useCallback(async (day: string, automatic = false) => {
+  const writeBrief = useCallback(async (day: string) => {
     setWritingBrief(true);
     setNotice(null);
-    const started = Date.now();
     try {
       const result = await createBrief(day);
       if (viewedDay.current !== day) return;
@@ -473,26 +457,11 @@ export default function DashboardPage() {
       );
     } catch (briefError) {
       if (viewedDay.current !== day) return;
-      const message = errorMessage(briefError);
-      const dropped = /not connected|did not return/i.test(message);
-      if (automatic && dropped && Date.now() - started > 20_000) {
-        const found = await waitForStoredBrief(day);
-        if (found || viewedDay.current !== day) return;
-      }
-      if (automatic && dropped) return;
-      setNotice(message);
+      setNotice(errorMessage(briefError));
     } finally {
       setWritingBrief(false);
     }
-  }, [waitForStoredBrief]);
-
-  useEffect(() => {
-    if (!dashboard || !selectedDay || openedBrief.current || writingBrief) return;
-    if (shiftDay(selectedDay, -parseDay(selectedDay).getDay()) !== dashboard.week_start) return;
-    openedBrief.current = true;
-    if (dashboard.brief) return;
-    void writeBrief(selectedDay, true);
-  }, [dashboard, selectedDay, writingBrief, writeBrief]);
+  }, []);
 
   async function toggleEmail() {
     if (!dashboard) return;

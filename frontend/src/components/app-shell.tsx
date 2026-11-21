@@ -51,7 +51,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Link href={coachSide ? "/" : "/athlete"} className="inline-flex shrink-0">
             <img src="/after-hours-athletics.png" alt="after : hours athletics" className="h-9 w-auto sm:h-11" />
           </Link>
-          <nav className="-mx-1 flex items-center gap-1 overflow-x-auto px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <nav className="flex flex-wrap items-center gap-x-1 gap-y-1">
             {links.map((link) => {
               const active = isActive(pathname, link.href);
               return (
@@ -59,7 +59,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   key={link.href}
                   href={link.href}
                   className={cn(
-                    "shrink-0 px-1.5 py-2 text-[11px] tracking-[0.08em] uppercase sm:px-2.5 sm:tracking-[0.14em]",
+                    "inline-flex min-h-11 items-center px-1.5 text-[11px] tracking-[0.06em] uppercase sm:px-2.5 sm:tracking-[0.14em]",
                     active ? "text-foreground underline decoration-1 underline-offset-8" : "text-foreground/70 hover:text-foreground",
                   )}
                 >

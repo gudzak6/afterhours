@@ -14,7 +14,7 @@ export function WeeklyChart({ weeks }: { weeks: WeeklyMileage[] }) {
     return <p className="text-sm text-muted-foreground">Weekly mileage appears after activities with distance are imported.</p>;
   }
   return (
-    <div className="h-48 w-full">
+    <div className="h-48 w-full min-w-0">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={points}>
           <CartesianGrid vertical={false} stroke="oklch(0.88 0.02 80)" />

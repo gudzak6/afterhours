@@ -22,7 +22,39 @@ export function ActivityTable({ activities }: { activities: Activity[] }) {
   }
 
   return (
-    <div className="overflow-x-auto">
+    <>
+      <ul className="divide-y divide-border md:hidden">
+        {activities.map((activity) => (
+          <li key={activity.garmin_activity_id} className="space-y-1 py-3">
+            <Link href={`/activities/${activity.garmin_activity_id}`} className="font-medium hover:underline">
+              {activity.name || "Untitled activity"}
+            </Link>
+            <p className="text-sm text-muted-foreground">
+              {formatWhen(activity.start_time_local, activity.start_time_utc)}
+              {" · "}
+              {activity.athlete_id ? (
+                <Link href={`/athletes/${activity.athlete_id}`} className="hover:underline">
+                  <AthleteName name={activity.athlete_name || "Athlete"} />
+                </Link>
+              ) : activity.athlete_name ? (
+                <AthleteName name={activity.athlete_name} />
+              ) : (
+                "—"
+              )}
+            </p>
+            <p className="text-sm">
+              {formatMiles(activity.distance_miles, hasField(activity, "distance_meters"))}
+              {" · "}
+              {formatPace(activity.average_pace_seconds_per_mile, hasField(activity, "average_speed_mps"))}
+            </p>
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Badge variant="outline">{formatActivityType(activity.workout_type || "not classified")}</Badge>
+              <Badge variant="secondary">{formatActivityType(activity.analysis_status)}</Badge>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <div className="hidden overflow-x-auto md:block">
       <table className="w-full min-w-[760px] text-left text-sm">
         <thead className="text-xs tracking-wide text-muted-foreground uppercase">
           <tr className="border-b border-border">
@@ -74,6 +106,7 @@ export function ActivityTable({ activities }: { activities: Activity[] }) {
           ))}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   );
 }

@@ -84,7 +84,7 @@ export default function AthleteAnalyticsPage() {
               </CardHeader>
               <CardContent>
                 {pacePoints.length === 0 ? <p className="text-sm text-muted-foreground">Pace shows up after a run with distance and time is stored.</p> : (
-                  <div className="h-48">
+                  <div className="h-48 min-w-0">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={pacePoints}>
                         <CartesianGrid vertical={false} stroke="oklch(0.88 0.02 80)" />

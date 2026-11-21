@@ -84,8 +84,25 @@ export function WorkoutBreakdown({ metrics }: { metrics: Record<string, unknown>
           {breakdown.groups.map((group, groupIndex) => (
             <div key={`${group.heading ?? "reps"}-${groupIndex}`} className="space-y-2">
               {group.heading ? <p className="text-sm font-medium">{group.heading}</p> : null}
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[520px] text-left text-sm">
+              <ul className="divide-y divide-border sm:hidden">
+                {group.repetitions.map((rep) => (
+                  <li key={rep.index} className="py-2">
+                    <p className="font-medium">{rep.label}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {formatDuration(rep.duration_seconds, true)}
+                      {" · "}
+                      {formatPace(rep.pace_seconds_per_mile, rep.pace_seconds_per_mile != null)}
+                      {" · "}
+                      {formatHeartRate(rep.average_heart_rate_bpm, rep.average_heart_rate_bpm != null)}
+                      {showJog && rep.recovery_seconds != null && rep.recovery_seconds >= 15
+                        ? ` · jog ${formatDuration(rep.recovery_seconds, true)}`
+                        : ""}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+              <div className="hidden overflow-x-auto sm:block">
+                <table className="w-full text-left text-sm">
                   <thead className="text-xs tracking-wide text-muted-foreground uppercase">
                     <tr className="border-b border-border">
                       <th className="px-2 py-2">{mileSplits ? "Mile" : "Rep"}</th>

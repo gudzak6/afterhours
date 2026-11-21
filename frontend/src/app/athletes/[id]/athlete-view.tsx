@@ -223,7 +223,7 @@ export default function AthletePage() {
             ) : (
               <ul className="divide-y divide-border text-sm">
                 {activities.map((activity) => (
-                  <li key={activity.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                  <li key={activity.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between">
                     <Link href={`/activities/${activity.garmin_activity_id}`} className="font-medium hover:underline">
                       {activity.name || "Activity"}
                     </Link>

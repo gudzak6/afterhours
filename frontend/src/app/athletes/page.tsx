@@ -63,7 +63,27 @@ export default function AthletesPage() {
             No athletes on the roster.
           </p>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-border">
+          <>
+          <ul className="divide-y divide-border rounded-xl border border-border md:hidden">
+            {dashboard.athletes.map((athlete) => (
+              <li key={athlete.id} className="space-y-3 px-4 py-4">
+                <Link href={`/athletes/${athlete.id}`} className="text-base font-medium hover:underline">
+                  <AthleteName name={athlete.display_name} />
+                </Link>
+                <p className="text-sm text-muted-foreground">{coachName}</p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  disabled={removingId !== null}
+                  onClick={() => void onRemove(athlete.id, athlete.display_name)}
+                >
+                  {removingId === athlete.id ? "Removing…" : "Remove"}
+                </Button>
+              </li>
+            ))}
+          </ul>
+          <div className="hidden overflow-x-auto rounded-xl border border-border md:block">
             <table className="w-full text-left text-sm">
               <thead className="text-xs tracking-wide text-muted-foreground uppercase">
                 <tr className="border-b border-border">
@@ -97,6 +117,7 @@ export default function AthletesPage() {
               </tbody>
             </table>
           </div>
+          </>
         )
       ) : null}
     </div>
