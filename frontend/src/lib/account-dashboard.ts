@@ -38,6 +38,18 @@ function raise(error: QueryError) {
   throw new Error(error.message);
 }
 
+function unreadable(error: QueryError) {
+  if (!error) return false;
+  return error.code === "42501" || /permission denied/i.test(error.message);
+}
+
+async function readableRows<T>(query: PromiseLike<{ data: T[] | null; error: QueryError }>): Promise<T[]> {
+  const { data, error } = await query;
+  if (unreadable(error)) return [];
+  raise(error);
+  return data ?? [];
+}
+
 function signedOut(error: QueryError) {
   if (!error) return false;
   return error.name === "AuthSessionMissingError" || error.message === "Auth session missing!";
@@ -141,25 +153,25 @@ export async function loadAccountDashboard(supabase: SupabaseClient, day?: strin
   const selected = day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : today;
   const week = weekContaining(selected);
   const supabaseIds = rows.map((row) => row.id);
-  const [{ data: goals, error: goalError }, { data: plans, error: planError }] = await Promise.all([
-    supabase.from("training_goals").select("athlete_id, primary_race_goal").in("athlete_id", supabaseIds),
-    supabase
-      .from("scheduled_workouts")
-      .select("id, athlete_id, scheduled_date, title, workout_type, distance_miles, repetitions, rep_distance_miles, target_pace, intensity")
-      .in("athlete_id", supabaseIds)
-      .gte("scheduled_date", week.start)
-      .lt("scheduled_date", week.end)
-      .order("scheduled_date"),
+  const [goals, plans] = await Promise.all([
+    readableRows<GoalRow>(supabase.from("training_goals").select("athlete_id, primary_race_goal").in("athlete_id", supabaseIds)),
+    readableRows<PlanRow>(
+      supabase
+        .from("scheduled_workouts")
+        .select("id, athlete_id, scheduled_date, title, workout_type, distance_miles, repetitions, rep_distance_miles, target_pace, intensity")
+        .in("athlete_id", supabaseIds)
+        .gte("scheduled_date", week.start)
+        .lt("scheduled_date", week.end)
+        .order("scheduled_date"),
+    ),
   ]);
-  raise(goalError);
-  raise(planError);
 
   const goalByAthlete = new Map<number, string | null>();
-  for (const goal of (goals ?? []) as GoalRow[]) {
+  for (const goal of goals) {
     goalByAthlete.set(goal.athlete_id, goal.primary_race_goal);
   }
   const plansByAthlete = new Map<number, PlanRow[]>();
-  for (const plan of (plans ?? []) as PlanRow[]) {
+  for (const plan of plans) {
     const list = plansByAthlete.get(plan.athlete_id) ?? [];
     list.push(plan);
     plansByAthlete.set(plan.athlete_id, list);
@@ -197,7 +209,7 @@ export async function loadAccountDashboard(supabase: SupabaseClient, day?: strin
     attention_count: 0,
     athletes: roster,
     recent_activities: [],
-    planned_workouts: ((plans ?? []) as PlanRow[]).map((plan) => {
+    planned_workouts: plans.map((plan) => {
       const athlete = names.get(plan.athlete_id);
       return {
         id: plan.id,
