@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useAthlete } from "@/components/athlete-frame";
+import { AthleteName } from "@/components/athlete-name";
 import { ActivityLine, durationLabel, milesLabel, paceLabel, planText } from "@/components/athlete-ui";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -49,7 +50,7 @@ export default function AthleteHomePage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-heading text-4xl tracking-tight">{home ? `Hello, ${home.name}` : "Home"}</h1>
+          <h1 className="font-heading text-4xl tracking-tight">{home ? <>Hello, <AthleteName name={home.name} /></> : "Home"}</h1>
           <p className="mt-2 text-sm text-muted-foreground">Runs imported from Garmin, plus whatever is on the plan.</p>
         </div>
         {status.garmin.key_saved ? (
@@ -163,7 +164,7 @@ export default function AthleteHomePage() {
                     </p>
                   </>
                 ) : (
-                  <p className="text-muted-foreground">A weekly plan appears after your coach schedules workouts.</p>
+                  <p className="text-muted-foreground">A weekly plan appears after Coach Owen schedules workouts.</p>
                 )}
               </CardContent>
             </Card>

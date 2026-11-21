@@ -9,6 +9,7 @@ import { AthleteStats } from "@/components/athlete-stats";
 import { MileageHistory } from "@/components/mileage-history";
 import { WeeklyChart } from "@/components/weekly-chart";
 import { StatusPill } from "@/components/status-pill";
+import { AthleteName } from "@/components/athlete-name";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -99,7 +100,7 @@ export default function AthletePage() {
           <p className="text-xs text-muted-foreground">
             <Link href="/athletes" className="hover:underline">All athletes</Link>
           </p>
-          <h1 className="font-heading text-4xl tracking-tight">{athlete?.display_name ?? "Athlete"}</h1>
+          <h1 className="font-heading text-4xl tracking-tight">{athlete ? <AthleteName name={athlete.display_name} /> : "Athlete"}</h1>
           <div className="mt-2 flex flex-wrap gap-2">
             {status ? <StatusPill status={status.training_status} /> : null}
           </div>

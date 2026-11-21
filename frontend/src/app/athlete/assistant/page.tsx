@@ -44,7 +44,7 @@ export default function AthleteAssistantPage() {
       <div>
         <h1 className="font-heading text-4xl tracking-tight">Assistant</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          Questions are answered from your stored training and your coach’s plan.
+          Questions are answered from your stored training and Coach Owen’s plan.
           {status.openai_configured ? "" : " The written assistant needs an OpenAI key on the server. The rest of your training is still available."}
         </p>
       </div>

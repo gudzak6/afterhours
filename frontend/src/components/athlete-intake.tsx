@@ -316,7 +316,7 @@ export function AthleteIntakeForm({ athlete, onSaved }: { athlete: Athlete; onSa
 
       <Card>
         <CardHeader>
-          <CardTitle>Coach notes</CardTitle>
+          <CardTitle>Coach Owen notes</CardTitle>
           <CardDescription>Private notes for this athlete. They are separate from the intake answers.</CardDescription>
         </CardHeader>
         <CardContent>
@@ -392,7 +392,7 @@ export function IntakeSummary({ athlete }: { athlete: Athlete | null }) {
     ["Preferred coach", intake?.preferred_coach],
     ["Anything else", intake?.anything_else],
     ["Heard about us", intake?.heard_about_us],
-    ["Coach notes", athlete.coach_notes],
+    ["Coach Owen notes", athlete.coach_notes],
   ];
   const filled = rows.filter((row) => row[1] && row[1].trim());
   const contact = [intake?.email, intake?.phone].filter(Boolean).join(" · ");

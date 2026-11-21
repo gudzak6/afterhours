@@ -32,7 +32,7 @@ export function CoachAccountCard() {
     event.preventDefault();
     try {
       const body = {
-        display_name: name.trim() || "Coach",
+        display_name: name.trim() || "Coach Owen",
         email: email.trim() || null,
         timezone,
         email_notifications_enabled: enabled,
@@ -48,7 +48,7 @@ export function CoachAccountCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Coach account</CardTitle>
+        <CardTitle>Coach Owen</CardTitle>
         <CardDescription>
           Email notifications are off until you turn them on. {coach?.email_configured ? "Mail is configured on the server." : "Mail is not configured, so a saved preference will not send anything."}
         </CardDescription>
@@ -72,7 +72,7 @@ export function CoachAccountCard() {
             Send the daily coaching brief
           </label>
           <div className="sm:col-span-2">
-            <Button type="submit">Save coach settings</Button>
+            <Button type="submit">Save Coach Owen settings</Button>
           </div>
           {notice ? <p className="text-sm sm:col-span-2">{notice}</p> : null}
         </form>

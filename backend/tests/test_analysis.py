@@ -153,8 +153,50 @@ def test_report_schema_accepts_a_complete_briefing() -> None:
     assert report["goal_progress_status"] == "insufficient_evidence"
 
 
-def test_report_schema_rejects_a_focus_list_with_one_point() -> None:
+def test_report_schema_accepts_one_focus_point_for_an_easy_run() -> None:
     payload = _report()
-    payload["where_to_focus"] = ["Only one point."]
+    payload["where_to_focus"] = ["Nothing to review on this easy run."]
+    payload["what_went_well"] = ["Pace stayed near 8:00 per mile."]
+    report = validate_report(payload)
+    assert report["where_to_focus"] == ["Nothing to review on this easy run."]
+
+
+def test_report_schema_rejects_an_empty_focus_list() -> None:
+    payload = _report()
+    payload["where_to_focus"] = []
     with pytest.raises(ValidationError):
         validate_report(payload)
+
+
+def test_easy_run_summary_drops_the_split_review() -> None:
+    from app.coach.engine import present_report
+
+    shown = present_report(
+        {
+            "summary": "Joey completed 13.06 km at 8:00 per mile, with mile paces and a calculated elevation note.",
+            "activity_classification": "Easy Run",
+            "effort_level": "Easy",
+        },
+        workout_type="easy",
+        distance_meters=8.12 * 1609.344,
+        average_speed_mps=1609.344 / 480,
+    )
+    assert shown is not None
+    assert shown["analysis_kind"] == "easy"
+    assert shown["summary"] == "Easy run. 8.12 mi, 8:00 per mile."
+    assert "elevation" not in shown["summary"].lower()
+
+
+def test_workout_summary_keeps_the_split_review() -> None:
+    from app.coach.engine import present_report
+
+    summary = "Completed 6 of 8 repetitions, averaging 5 seconds per mile slower than prescribed. Mile 4 climbed 18 m."
+    shown = present_report(
+        {"summary": summary, "activity_classification": "Interval Training"},
+        workout_type="intervals",
+        distance_meters=10000,
+        average_speed_mps=3.5,
+    )
+    assert shown is not None
+    assert shown["analysis_kind"] == "workout"
+    assert shown["summary"] == summary

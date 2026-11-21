@@ -64,13 +64,15 @@ When a saved analysis is present, you may use it as an earlier interpretation an
 REPORT_PROMPT = """You write a post-run assessment for the coach who is reading it, about one athlete on their roster.
 The reader is the coach, not the athlete. Use athlete_profile.display_name. Refer to the athlete by that name. Do not address the athlete as "you", and do not write as if the athlete will read this.
 Be specific and analytical. Do not be generic or motivational. Explain why the session matters for this athlete's development.
-Keep each narrative section to about 2–4 sentences. what_went_well and where_to_focus are 2–4 separate sentences.
+Match the length to the stored workout type.
+An easy or recovery run gets a short note, not a workout review. The summary is one or two sentences: distance, average pace, that it was easy or recovery, and whether a planned session was stored. Do not list mile splits, repetition paces, the workout_breakdown label, or the elevation note. training_impact, fitness_indicators, and goal_progress are one sentence each. what_went_well and where_to_focus each contain one sentence. For where_to_focus, say there is nothing to review unless a measurement is clearly off for easy running.
+A workout gets the fuller review. Workouts are intervals, threshold, tempo, marathon pace, strides, progression, race, and long run. For those, keep each narrative section to about 2–4 sentences, and what_went_well and where_to_focus are 2–4 separate sentences.
 
 Use only numbers, history, goals, and thresholds present in the context. Do not invent splits, sensors, lactate thresholds, race results, zones, or a fitness prediction.
 If planned_vs_actual is null, say the planned session was not available. Do not compare the athlete with a plan that is not in the context.
 When planned_vs_actual is present, those mileage, repetition, pace, and recovery differences were already calculated. Do not recompute them. Use the calculated summary. A difference is not automatically poor execution: consider the workout purpose, the recorded effort, and whether the evidence is marked insufficient. Say whether the stored objective was met only from execution. Compare this execution with comparable_activities when those measurements exist. Suggest that the coach maintain, monitor, or review the plan, and do not change the plan yourself.
-When metrics.workout_breakdown.label is present, that label and each repetition's pace were already calculated from the recording. Describe the session as that structure and quote those paces. Do not average different repetition distances into one pace, and do not describe a different session. metrics.repetitions can split one repetition across an automatic lap, so it is not the workout structure.
-When metrics.elevation_effect.available is true, the elevation note, the uphill and downhill pace differences, and the mile net climbs were already calculated. Discuss that elevation effect in the summary and in one of fitness_indicators, what_went_well, or where_to_focus. Quote the note. Do not recompute grade and do not invent a hill. If a slower mile or repetition lines up with a calculated climb, say so. If elevation_effect.available is false, say the elevation effect was not available.
+On a workout, when metrics.workout_breakdown.label is present, that label and each repetition's pace were already calculated from the recording. Describe the session as that structure and quote those paces. Do not average different repetition distances into one pace, and do not describe a different session. metrics.repetitions can split one repetition across an automatic lap, so it is not the workout structure. On an easy or recovery run, ignore workout_breakdown. Automatic mile laps are not a workout.
+On a workout, when metrics.elevation_effect.available is true, the elevation note, the uphill and downhill pace differences, and the mile net climbs were already calculated. Discuss that elevation effect in the summary and in one of fitness_indicators, what_went_well, or where_to_focus. Quote the note. Do not recompute grade and do not invent a hill. If a slower mile or repetition lines up with a calculated climb, say so. If elevation_effect.available is false, say the elevation effect was not available. On an easy or recovery run, leave the elevation note out.
 Heart rate on repetitions shorter than 30 seconds is not evidence of how hard the effort was.
 Phrase activity_classification from the stored workout type, using coach language such as Interval Training, Easy Run, Threshold, Long Run, Strides, Tempo, Progression, or Recovery. Do not contradict the stored classification.
 Set effort_level to Easy, Moderate, or Hard Effort from the recorded pace, heart rate, and workout structure. If that evidence is thin, choose the closest level and name the uncertainty.
@@ -81,7 +83,7 @@ Call the athlete on track, building, or in need of attention only when the suppl
 Points in where_to_focus are for a human coach to review. They do not change the training plan.
 
 Write:
-- summary: what the athlete completed, including distance, average pace, the workout_breakdown label and repetition paces when that object is present, the calculated elevation effect when it is available, and how it compared with a planned session only if one is stored.
+- summary: for an easy or recovery run, distance, average pace, and the plan note only. For a workout, what the athlete completed, including distance, average pace, the workout_breakdown label and repetition paces when that object is present, the calculated elevation effect when it is available, and how it compared with a planned session only if one is stored.
 - training_impact: the physiological benefit this recorded session can support, such as VO2max, lactate threshold, aerobic endurance, speed development, or running economy, and what it cannot show.
 - fitness_indicators: what the workout suggests about current fitness, using the saved race goal, earlier comparable performances, and saved lactate thresholds when they exist.
 - what_went_well: specific positives such as consistent pacing, a strong finish, or a better comparable performance, each tied to a recorded number.
@@ -133,8 +135,8 @@ REPORT_RESPONSE_FORMAT = {
 
 def _sentences(value: list[str]) -> list[str]:
     items = [item.strip() for item in value if item and item.strip()]
-    if len(items) < 2 or len(items) > 4:
-        raise ValueError("provide 2 to 4 sentences")
+    if len(items) < 1 or len(items) > 4:
+        raise ValueError("provide 1 to 4 sentences")
     return items
 
 
@@ -174,6 +176,76 @@ class WorkoutReport(BaseModel):
 
 def validate_report(payload: dict) -> dict:
     return WorkoutReport.model_validate(payload).model_dump()
+
+
+EASY_SESSION_TYPES = {"easy", "recovery"}
+WORKOUT_SESSION_TYPES = {"intervals", "threshold", "tempo", "marathon_pace", "strides", "progression", "race", "long_run"}
+
+
+def session_kind(workout_type: str | None, report: dict | None = None) -> str:
+    """Easy and recovery stay short. A stored workout type keeps the full review."""
+    if workout_type in EASY_SESSION_TYPES:
+        return "easy"
+    if workout_type in WORKOUT_SESSION_TYPES:
+        return "workout"
+    if isinstance(report, dict):
+        label = str(report.get("activity_classification") or "").strip().lower()
+        if label in {"easy run", "easy", "recovery", "recovery run"}:
+            return "easy"
+    return "workout"
+
+
+def easy_summary(*, workout_type: str | None, distance_meters: float | None, average_speed_mps: float | None) -> str:
+    """One measured line for an easy or recovery run. Splits and hills are left out."""
+    from app.services.adherence import format_pace
+
+    label = "Recovery run" if workout_type == "recovery" else "Easy run"
+    parts = [label]
+    if isinstance(distance_meters, (int, float)):
+        parts.append(f"{distance_meters / 1609.344:.2f} mi")
+    pace = format_pace(pace_seconds_per_mile(average_speed_mps))
+    if pace:
+        parts.append(f"{pace} per mile")
+    if len(parts) == 1:
+        return f"{label}."
+    return f"{parts[0]}. {', '.join(parts[1:])}."
+
+
+def _brief_easy_text(summary: str) -> bool:
+    if len(summary) > 280:
+        return False
+    lowered = summary.lower()
+    if "elevation" in lowered or "mile pace" in lowered or "×" in summary:
+        return False
+    return True
+
+
+def present_report(
+    report: dict | None,
+    *,
+    workout_type: str | None,
+    distance_meters: float | None,
+    average_speed_mps: float | None,
+) -> dict | None:
+    """Show a short easy-run note. Keep a workout's saved review as written."""
+    if not isinstance(report, dict):
+        return None
+    shown = dict(report)
+    kind = session_kind(workout_type, report)
+    shown["analysis_kind"] = kind
+    summary = shown.get("summary")
+    if kind == "easy":
+        if not isinstance(summary, str) or not _brief_easy_text(summary.strip()):
+            shown["summary"] = easy_summary(
+                workout_type=workout_type,
+                distance_meters=distance_meters,
+                average_speed_mps=average_speed_mps,
+            )
+        else:
+            shown["summary"] = summary.strip()
+    elif isinstance(summary, str):
+        shown["summary"] = summary.strip()
+    return shown
 
 
 def openai_configured(settings: Settings) -> bool:
@@ -875,12 +947,19 @@ def generate_report(session: Session, settings: Settings, athlete: Athlete, acti
     if not openai_configured(settings):
         raise RuntimeError("openai_not_configured")
     context = build_report_context(session, athlete, activity)
+    workout_type = (context.get("current_activity") or {}).get("activity", {}).get("workout_type")
+    kind = session_kind(workout_type if isinstance(workout_type, str) else None)
+    length_note = (
+        "This stored session is an easy or recovery run. Write the short note. Do not review splits or elevation."
+        if kind == "easy"
+        else "This stored session is a workout. Write the fuller review, including the calculated structure and elevation when those fields are present."
+    )
     client = _client(settings)
     messages = [
         {"role": "system", "content": REPORT_PROMPT},
         {
             "role": "user",
-            "content": "Write the coaching report from this context only:\n" + json.dumps(context, default=str),
+            "content": length_note + "\nWrite the coaching report from this context only:\n" + json.dumps(context, default=str),
         },
     ]
     report = None
@@ -907,6 +986,12 @@ def generate_report(session: Session, settings: Settings, athlete: Athlete, acti
             )
     if report is None:
         raise RuntimeError(f"report_validation_failed: {validation_error}")
+    report = present_report(
+        report,
+        workout_type=workout_type if isinstance(workout_type, str) else None,
+        distance_meters=activity.distance_meters,
+        average_speed_mps=activity.average_speed_mps,
+    )
     now = datetime.now(UTC)
     row = WorkoutAnalysis(
         activity_id=activity.id,

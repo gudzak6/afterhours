@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.database import get_db
-from app.coach.engine import chat, generate_report, openai_configured, safe_error
+from app.coach.engine import chat, generate_report, openai_configured, present_report, safe_error
 from app.fit.importer import file_import_status, import_one, start_file_import
 from app.garmin.mapping import METERS_PER_MILE, pace_seconds_per_mile
 from app.metrics.engine import activity_metrics
@@ -492,7 +492,12 @@ def get_activity(
         ),
         metrics=metrics,
         series=[_series_point(sample) for sample in _downsample(list(samples))],
-        report=None if analysis is None else analysis.report,
+        report=present_report(
+            None if analysis is None else analysis.report,
+            workout_type=None if classification is None else classification.workout_type,
+            distance_meters=activity.distance_meters,
+            average_speed_mps=activity.average_speed_mps,
+        ),
         report_status="not_started" if analysis is None else analysis.status,
         fit_summary=activity.fit_summary,
         workout_steps_found=step_count > 0,

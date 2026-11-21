@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -23,8 +23,10 @@ adherence_notes are calculated planned-versus-actual results. Do not recompute m
 positive_developments should include athletes with a stored positive note or an adherence note of kind consistent.
 Mention athletes who are completing the prescribed plan when that note is present. Do not treat a small pace difference as a failure unless the note says the workout was partial.
 suggested_actions should be specific follow-ups for the coach. They are not applied to a training plan.
+daily_summary is the only text shown to the coach. Write it as one paragraph. Include who needs a follow-up, what went well, and what the coach should do. Do not leave that meaning for the other fields.
 Prefer a short briefing over a list of every workout.
-athlete_id values must be copied from the context.
+athlete_id and athlete_name must be copied from the roster. Do not use a name that is not in the roster.
+The brief is for brief_date. Do not describe a different day as if it were brief_date.
 """
 
 BRIEF_SCHEMA = {
@@ -128,16 +130,23 @@ def validate_brief(payload: dict, allowed_ids: set[int]) -> dict:
     return data
 
 
-def generate_brief(session: Session, settings: Settings, coach: Coach, roster: list[dict]) -> CoachingBrief:
+def generate_brief(
+    session: Session,
+    settings: Settings,
+    coach: Coach,
+    roster: list[dict],
+    *,
+    day: date | None = None,
+) -> CoachingBrief:
     from app.coach.engine import _client, _completion, openai_configured
 
     if not openai_configured(settings):
         raise RuntimeError("openai_not_configured")
     allowed = {int(item["athlete_id"]) for item in roster}
-    local_day = datetime.now(ZoneInfo(coach.timezone or "America/New_York")).date()
+    local_day = day or datetime.now(ZoneInfo(coach.timezone or "America/New_York")).date()
     messages = [
         {"role": "system", "content": BRIEF_PROMPT},
-        {"role": "user", "content": json.dumps({"roster": roster}, default=str)},
+        {"role": "user", "content": json.dumps({"brief_date": local_day.isoformat(), "roster": roster}, default=str)},
     ]
     report = None
     error = "The model returned no brief."
@@ -178,6 +187,16 @@ def generate_brief(session: Session, settings: Settings, coach: Coach, roster: l
 def latest_brief(session: Session, coach: Coach) -> CoachingBrief | None:
     return session.scalar(
         select(CoachingBrief).where(CoachingBrief.coach_id == coach.id).order_by(CoachingBrief.id.desc()).limit(1)
+    )
+
+
+def brief_for_day(session: Session, coach: Coach, day: date) -> CoachingBrief | None:
+    """Return the newest brief written for this calendar day. Other days stay hidden."""
+    return session.scalar(
+        select(CoachingBrief)
+        .where(CoachingBrief.coach_id == coach.id, CoachingBrief.brief_date == day)
+        .order_by(CoachingBrief.id.desc())
+        .limit(1)
     )
 
 

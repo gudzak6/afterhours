@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
+import { AthleteName, isTestAthlete } from "@/components/athlete-name";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { errorMessage, getDashboard, importTrainingProgram, type ProgramImportResult, type RosterAthlete } from "@/lib/api";
@@ -75,7 +76,7 @@ export function PlanUpload() {
                 {athletes.length === 0 ? <option value="">No athletes</option> : null}
                 {athletes.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.display_name}
+                    {item.display_name}{isTestAthlete(item.display_name) ? " (test data)" : ""}
                   </option>
                 ))}
               </select>
@@ -110,7 +111,7 @@ export function PlanUpload() {
         {result && athlete ? (
           <div className="mt-4 space-y-2 text-sm">
             <p>
-              {result.created} {result.created === 1 ? "workout was" : "workouts were"} written onto {athlete.display_name}’s plan for {formatDay(result.start)} through {formatDay(result.end)}. {result.replaced} planned {result.replaced === 1 ? "workout" : "workouts"} in those dates {result.replaced === 1 ? "was" : "were"} replaced.
+              {result.created} {result.created === 1 ? "workout was" : "workouts were"} written onto <AthleteName name={athlete.display_name} />’s plan for {formatDay(result.start)} through {formatDay(result.end)}. {result.replaced} planned {result.replaced === 1 ? "workout" : "workouts"} in those dates {result.replaced === 1 ? "was" : "were"} replaced.
             </p>
             <ul className="space-y-1 text-muted-foreground">
               {result.workouts.map((workout) => (

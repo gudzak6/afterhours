@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { AthleteName } from "@/components/athlete-name";
 import { Badge } from "@/components/ui/badge";
 import type { Activity } from "@/lib/api";
 import {
@@ -43,10 +44,10 @@ export function ActivityTable({ activities }: { activities: Activity[] }) {
               <td className="px-3 py-3 whitespace-nowrap">
                 {activity.athlete_id ? (
                   <Link href={`/athletes/${activity.athlete_id}`} className="hover:underline">
-                    {activity.athlete_name || "Athlete"}
+                    <AthleteName name={activity.athlete_name || "Athlete"} />
                   </Link>
                 ) : (
-                  activity.athlete_name || "—"
+                  activity.athlete_name ? <AthleteName name={activity.athlete_name} /> : "—"
                 )}
               </td>
               <td className="px-3 py-3">

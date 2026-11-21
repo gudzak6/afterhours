@@ -29,7 +29,7 @@ def ensure_coach(session: Session, settings: Settings) -> Coach:
     now = datetime.now(UTC)
     if coach is None:
         coach = Coach(
-            display_name="Coach",
+            display_name="Coach Owen",
             timezone="America/New_York",
             email_notifications_enabled=False,
             created_at=now,
@@ -239,7 +239,9 @@ def _run_sync_locked(
     session.commit()
     session.refresh(job)
 
-    end = now.date()
+    # Garmin treats the end date as the first day to leave out, so add a day
+    # or a run from today is skipped.
+    end = now.date() + timedelta(days=1)
     start = end - timedelta(days=days)
     offset = 0
     page_size = max(1, min(settings.garmin_sync_page_size, 100))

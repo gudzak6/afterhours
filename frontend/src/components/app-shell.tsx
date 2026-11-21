@@ -1,16 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { cn } from "cn";
-import { accountEmail } from "@/lib/account";
 
 const coachLinks = [
   { href: "/", label: "Dashboard" },
   { href: "/athletes", label: "Athletes" },
   { href: "/agent", label: "Agent" },
-  { href: "/plan", label: "Plan" },
+  { href: "/plan", label: "Plans" },
   { href: "/settings", label: "Settings" },
 ];
 
@@ -19,7 +17,8 @@ const athleteLinks = [
   { href: "/athlete/calendar", label: "Calendar" },
   { href: "/athlete/week", label: "Plan" },
   { href: "/athlete/analytics", label: "Analytics" },
-  { href: "/athlete/messages", label: "Coach" },
+  { href: "/athlete/messages", label: "Coach Owen" },
+  { href: "/athlete/settings", label: "Settings" },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -43,40 +42,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const coachSide = isCoachPath(pathname);
   const athleteSide = pathname === "/athlete" || pathname.startsWith("/athlete/");
-  const [email, setEmail] = useState<string | null>(null);
   const links = coachSide ? coachLinks : athleteSide ? athleteLinks : [];
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void accountEmail().then(setEmail).catch(() => setEmail(null));
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [pathname]);
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-border bg-card/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-xs font-medium tracking-[0.16em] text-primary uppercase">
-              {coachSide ? "Local running coach" : "Your training"}
-            </p>
-            <Link href={coachSide ? "/" : "/athlete"} className="font-heading text-2xl tracking-tight">
-              Training Coach
-            </Link>
-          </div>
-          <nav className="flex flex-wrap items-center gap-1">
-            {coachSide ? null : (
-              <Link
-                href="/login"
-                className={cn(
-                  "rounded-lg px-3 py-1.5 text-sm",
-                  pathname === "/login" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                {email ?? "Account"}
-              </Link>
-            )}
+      <header className="border-b border-foreground/15 bg-background">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+          <Link href={coachSide ? "/" : "/athlete"} className="inline-flex">
+            <img src="/after-hours-athletics.png" alt="after : hours athletics" className="h-12 w-auto sm:h-14" />
+          </Link>
+          <nav className="flex flex-wrap items-center gap-x-1 gap-y-2">
             {links.map((link) => {
               const active = isActive(pathname, link.href);
               return (
@@ -84,8 +59,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   key={link.href}
                   href={link.href}
                   className={cn(
-                    "rounded-lg px-3 py-1.5 text-sm",
-                    active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    "px-3 py-1.5 text-[11px] tracking-[0.16em] uppercase",
+                    active ? "text-foreground underline decoration-1 underline-offset-8" : "text-foreground/70 hover:text-foreground",
                   )}
                 >
                   {link.label}
@@ -95,15 +70,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </nav>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">{children}</main>
-      {athleteSide ? (
-        <Link
-          href="/"
-          className="fixed right-4 bottom-4 z-40 rounded-full bg-primary px-4 py-2 text-sm text-primary-foreground shadow-lg"
-        >
-          Coach view
-        </Link>
-      ) : null}
+      <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">{children}</main>
+      <footer className="border-t border-foreground/15">
+        <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-8 sm:px-6">
+          <p className="text-[11px] tracking-[0.16em] uppercase">after : hours athletics</p>
+          <p className="text-sm text-muted-foreground">Personalized coaching for performance driven running.</p>
+        </div>
+      </footer>
     </div>
   );
 }

@@ -47,7 +47,7 @@ export function MessageThread({ athleteId, author }: { athleteId: number; author
           return (
             <li key={message.id} className={mine ? "ml-auto max-w-[85%]" : "mr-auto max-w-[85%]"}>
               <div className={`rounded-2xl px-3 py-2 text-sm ${mine ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
-                <p className="text-[11px] tracking-wide uppercase opacity-70">{message.author}</p>
+                <p className="text-[11px] tracking-wide uppercase opacity-70">{message.author === "coach" ? "Coach Owen" : message.author}</p>
                 <p className="mt-1 whitespace-pre-wrap">{message.body}</p>
               </div>
             </li>

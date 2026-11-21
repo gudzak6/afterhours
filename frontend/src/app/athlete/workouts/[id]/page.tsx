@@ -113,7 +113,7 @@ export default function AthleteWorkoutPage() {
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>Notes for your coach</CardTitle>
+          <CardTitle>Notes for Coach Owen</CardTitle>
         </CardHeader>
         <CardContent>
           <CommentList

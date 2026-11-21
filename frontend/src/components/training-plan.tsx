@@ -2,26 +2,52 @@
 
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { StatusPill } from "@/components/status-pill";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { hasAccount, mirrorPlanIfEmpty } from "@/lib/account";
-import { errorMessage, getAthletePlan, matchAthletePlan, type PlanView, type PlannedWorkout } from "@/lib/api";
+import { hasAccount, mirrorPlanIfEmpty, mirrorWorkout } from "@/lib/account";
+import { errorMessage, getAthletePlan, updateAthletePlan, type PlanView, type PlanWeek, type PlannedWorkout } from "@/lib/api";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const WORKOUT_TYPES = ["easy", "recovery", "long_run", "intervals", "threshold", "tempo", "marathon_pace", "strides", "progression", "race", "other"];
+const fieldClass = "mt-1 w-full rounded-lg border border-input bg-card px-3 py-2 text-sm";
+
+type WorkoutForm = {
+  scheduled_date: string;
+  title: string;
+  details: string;
+  workout_type: string;
+  distance_miles: string;
+  target_pace: string;
+  coach_notes: string;
+};
 
 export function TrainingPlan({ athleteId }: { athleteId: number }) {
   const [view, setView] = useState<PlanView | null>(null);
   const [week, setWeek] = useState<string | null>(null);
   const [day, setDay] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [form, setForm] = useState<WorkoutForm | null>(null);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (focusDay?: string) => {
     const plan = await getAthletePlan(athleteId);
     setView(plan);
-    setWeek((current) => current ?? plan.weeks.find((item) => item.in_progress)?.week_start ?? plan.weeks.at(-1)?.week_start ?? null);
+    const today = todayIso();
+    setWeek((current) => (focusDay ? weekFor(plan.weeks, focusDay) ?? current : current ?? weekFor(plan.weeks, today)));
+    setDay((current) => {
+      if (focusDay) return focusDay;
+      if (current) return current;
+      const start = weekFor(plan.weeks, today);
+      if (!start) return null;
+      if (today >= start && today < addDays(start, 7)) return today;
+      const first = plan.workouts.find((workout) => workout.scheduled_date >= start && workout.scheduled_date < addDays(start, 7));
+      return first?.scheduled_date ?? start;
+    });
     if (await hasAccount()) {
       try {
         await mirrorPlanIfEmpty(athleteId, plan.workouts);
@@ -38,15 +64,68 @@ export function TrainingPlan({ athleteId }: { athleteId: number }) {
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  async function onMatch(workout: PlannedWorkout, value: string) {
-    if (value === "missed") {
-      await matchAthletePlan(athleteId, workout.id, { confirmed_missed: true });
-    } else if (value === "auto") {
-      await matchAthletePlan(athleteId, workout.id, { garmin_activity_id: null });
-    } else {
-      await matchAthletePlan(athleteId, workout.id, { garmin_activity_id: Number(value) });
+  function openEdit(workout: PlannedWorkout) {
+    setEditingId(workout.id);
+    setForm({
+      scheduled_date: workout.scheduled_date,
+      title: workout.title,
+      details: workout.details ?? "",
+      workout_type: workout.workout_type ?? "",
+      distance_miles: workout.distance_miles == null ? "" : String(Math.round(workout.distance_miles * 100) / 100),
+      target_pace: workout.target_pace ?? "",
+      coach_notes: workout.coach_notes ?? "",
+    });
+    setError(null);
+  }
+
+  async function onSave(event: FormEvent, workout: PlannedWorkout) {
+    event.preventDefault();
+    if (!form) return;
+    const title = form.title.trim();
+    if (!title) {
+      setError("A workout needs a name.");
+      return;
     }
-    await load();
+    const distance = form.distance_miles.trim();
+    const miles = distance === "" ? null : Number(distance);
+    if (miles != null && !Number.isFinite(miles)) {
+      setError("Distance needs to be a number of miles.");
+      return;
+    }
+    const body = {
+      scheduled_date: form.scheduled_date,
+      title,
+      details: form.details.trim() || null,
+      workout_type: form.workout_type || null,
+      distance_miles: miles,
+      target_pace: form.target_pace.trim() || null,
+      coach_notes: form.coach_notes.trim() || null,
+      warmup: workout.warmup,
+      cooldown: workout.cooldown,
+      repetitions: workout.repetitions,
+      rep_distance_miles: workout.rep_distance_miles,
+      recovery_seconds: workout.recovery_seconds,
+      intensity: workout.intensity,
+    };
+    setSaving(true);
+    setError(null);
+    try {
+      await updateAthletePlan(athleteId, workout.id, body);
+      if (await hasAccount()) {
+        try {
+          await mirrorWorkout(athleteId, workout.id, body, true);
+        } catch {
+          // The coaching plan is saved. The account copy can catch up on the next visit.
+        }
+      }
+      setEditingId(null);
+      setForm(null);
+      await load(body.scheduled_date);
+    } catch (saveError: unknown) {
+      setError(errorMessage(saveError));
+    } finally {
+      setSaving(false);
+    }
   }
 
   const selected = view?.weeks.find((item) => item.week_start === week) ?? null;
@@ -199,26 +278,65 @@ export function TrainingPlan({ athleteId }: { athleteId: number }) {
               </p>
             ) : null}
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <select
-                value={workout.match?.source === "manual" ? String(workout.match.garmin_activity_id) : workout.status === "confirmed_missed" ? "missed" : "auto"}
-                onChange={(event) => void onMatch(workout, event.target.value)}
-                className="h-8 rounded-lg border border-input bg-card px-2 text-xs"
-              >
-                <option value="auto">Automatic match</option>
-                <option value="missed">Confirm missed</option>
-                {workout.candidates.map((candidate) => (
-                  <option key={candidate.garmin_activity_id} value={candidate.garmin_activity_id}>
-                    {candidate.name || "Activity"}{candidate.distance_miles == null ? "" : ` · ${candidate.distance_miles.toFixed(2)} mi`}
-                  </option>
-                ))}
-              </select>
+              <Button type="button" variant="outline" size="sm" onClick={() => openEdit(workout)}>
+                Edit workout
+              </Button>
               {workout.revisions.length > 0 ? <span className="text-xs text-muted-foreground">{workout.revisions.length} earlier version{workout.revisions.length === 1 ? "" : "s"} kept</span> : null}
             </div>
+            {editingId === workout.id && form ? (
+              <form onSubmit={(event) => void onSave(event, workout)} className="mt-3 grid gap-3 border-t border-border pt-3 sm:grid-cols-2">
+                <label className="text-sm">Date
+                  <input type="date" required value={form.scheduled_date} onChange={(event) => setForm({ ...form, scheduled_date: event.target.value })} className={fieldClass} />
+                </label>
+                <label className="text-sm">Name
+                  <input required value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} className={fieldClass} />
+                </label>
+                <label className="text-sm">Type
+                  <select value={form.workout_type} onChange={(event) => setForm({ ...form, workout_type: event.target.value })} className={fieldClass}>
+                    <option value="">Unspecified</option>
+                    {(form.workout_type && !WORKOUT_TYPES.includes(form.workout_type) ? [form.workout_type, ...WORKOUT_TYPES] : WORKOUT_TYPES).map((type) => (
+                      <option key={type} value={type}>{type.replaceAll("_", " ")}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-sm">Distance, miles
+                  <input value={form.distance_miles} onChange={(event) => setForm({ ...form, distance_miles: event.target.value })} inputMode="decimal" className={fieldClass} />
+                </label>
+                <label className="text-sm">Target pace
+                  <input value={form.target_pace} onChange={(event) => setForm({ ...form, target_pace: event.target.value })} placeholder="8:00" className={fieldClass} />
+                </label>
+                <label className="text-sm sm:col-span-2">Prescription
+                  <textarea value={form.details} onChange={(event) => setForm({ ...form, details: event.target.value })} className={`${fieldClass} min-h-24`} />
+                </label>
+                <label className="text-sm sm:col-span-2">Coach notes
+                  <textarea value={form.coach_notes} onChange={(event) => setForm({ ...form, coach_notes: event.target.value })} className={`${fieldClass} min-h-16`} />
+                </label>
+                <div className="flex gap-2 sm:col-span-2">
+                  <Button type="submit" disabled={saving}>{saving ? "Saving" : "Save workout"}</Button>
+                  <Button type="button" variant="outline" onClick={() => { setEditingId(null); setForm(null); }}>Cancel</Button>
+                </div>
+              </form>
+            ) : null}
           </li>
         ))}
       </ul>
     </div>
   );
+}
+
+function todayIso() {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
+function weekFor(weeks: PlanWeek[], day: string) {
+  const current = weeks.find((item) => item.week_start <= day && addDays(item.week_start, 7) > day);
+  if (current) return current.week_start;
+  const upcoming = weeks.find((item) => item.week_start > day);
+  if (upcoming) return upcoming.week_start;
+  return weeks.at(-1)?.week_start ?? null;
 }
 
 function parseDay(iso: string): Date {

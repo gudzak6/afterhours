@@ -412,8 +412,12 @@ export type CoachDashboard = {
     athlete_name: string | null;
     name: string | null;
     distance_meters: number | null;
+    duration_seconds?: number | null;
+    average_pace_seconds_per_mile?: number | null;
+    location_name?: string | null;
     start_time_local: string | null;
     analysis_summary?: string | null;
+    analysis_kind?: "easy" | "workout" | null;
   }>;
   planned_workouts: Array<{
     id: number;
@@ -430,9 +434,25 @@ export type CoachDashboard = {
   coach: CoachAccount;
 };
 
-export function getDashboard(day?: string) {
+export async function getDashboard(day?: string) {
   const query = day ? `?day=${encodeURIComponent(day)}` : "";
-  return request<CoachDashboard>(`/api/coach/dashboard${query}`);
+  try {
+    return await request<CoachDashboard>(`/api/coach/dashboard${query}`);
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status < 500 || typeof error.body !== "string") throw error;
+    const [{ createClient }, { loadAccountDashboard }] = await Promise.all([
+      import("@/utils/supabase/client"),
+      import("@/lib/account-dashboard"),
+    ]);
+    return loadAccountDashboard(createClient(), day);
+  }
+}
+
+export function syncRoster() {
+  return request<{ synced: number; imported: number; updated: number; errors: string[] }>("/api/coach/sync", {
+    method: "POST",
+    body: "{}",
+  });
 }
 
 export function getCoach() {
@@ -443,10 +463,10 @@ export function updateCoach(body: Record<string, unknown>) {
   return request<CoachAccount>("/api/coach", { method: "PATCH", body: JSON.stringify(body) });
 }
 
-export function createBrief() {
+export function createBrief(day: string) {
   return request<{ status: string; created_at: string; report: CoachingBrief }>("/api/coach/brief", {
     method: "POST",
-    body: "{}",
+    body: JSON.stringify({ day }),
   });
 }
 

@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import { signedInAthleteId } from "@/lib/account";
+import { AthleteName } from "@/components/athlete-name";
 import { GarminConnect } from "@/components/athlete-onboarding";
 import { errorMessage, getAthlete, getPortal, type PortalStatus } from "@/lib/api";
 
@@ -96,7 +97,7 @@ export function AthleteFrame({ children }: { children: React.ReactNode }) {
   return (
     <AthleteContext.Provider value={{ athleteId, status, reload, openGarmin: () => setPhase("connect") }}>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
-        <p>{status.athlete.display_name}{status.coach_name ? ` · Coach ${status.coach_name}` : ""}</p>
+        <p><AthleteName name={status.athlete.display_name} /> · Coach Owen</p>
         <button
           type="button"
           className="underline"

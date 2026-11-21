@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.api.routes import _athlete_out, _classification_map, apply_athlete_update
 from app.config import Settings, get_settings
 from app.database import get_db
+from app.garmin.mapping import pace_seconds_per_mile
 from app.models import (
     Activity,
     Athlete,
@@ -23,6 +24,7 @@ from app.models import (
     SyncJob,
     TrainingGoal,
     WorkoutAnalysis,
+    WorkoutClassification,
 )
 from app.schemas import AthleteOut, AthleteUpdate
 from app.services.adherence import (
@@ -35,7 +37,8 @@ from app.services.adherence import (
     parse_plan_xlsx,
     prescription_snapshot,
 )
-from app.services.brief import deliver_daily_brief, generate_brief, latest_brief
+from app.coach.engine import present_report
+from app.services.brief import brief_for_day, deliver_daily_brief, generate_brief
 from app.services.efforts import running_stats
 from app.services.history import mileage_chart, weekly_mileage
 from app.services.program import next_monday, workouts_from_program
@@ -43,7 +46,7 @@ from app.services.mailer import smtp_configured
 from app.services.mileage import as_utc
 from app.services.roster import attention_reasons, training_status
 from app.services.athletes import delete_athlete
-from app.services.sync import athletes_for_coach, ensure_coach
+from app.services.sync import SyncInProgress, athletes_for_coach, ensure_coach, run_sync, sync_saved_athlete_keys
 
 router = APIRouter()
 
@@ -171,7 +174,8 @@ def _planned_summary(plan: ScheduledWorkout, athlete_name: str | None) -> dict:
     }
 
 
-def _analysis_summaries(db: Session, activity_ids: list[int]) -> dict[int, str]:
+def _analysis_summaries(db: Session, activities: list[Activity]) -> dict[int, dict]:
+    activity_ids = [activity.id for activity in activities]
     if not activity_ids:
         return {}
     rows = db.scalars(
@@ -179,13 +183,28 @@ def _analysis_summaries(db: Session, activity_ids: list[int]) -> dict[int, str]:
         .where(WorkoutAnalysis.activity_id.in_(activity_ids), WorkoutAnalysis.status == "ready")
         .order_by(WorkoutAnalysis.id.desc())
     ).all()
-    summaries: dict[int, str] = {}
+    stored: dict[int, dict] = {}
     for row in rows:
-        if row.activity_id in summaries or not isinstance(row.report, dict):
+        if row.activity_id in stored or not isinstance(row.report, dict):
             continue
-        summary = row.report.get("summary")
+        stored[row.activity_id] = row.report
+    types = {
+        row.activity_id: row.workout_type
+        for row in db.scalars(select(WorkoutClassification).where(WorkoutClassification.activity_id.in_(activity_ids))).all()
+    }
+    summaries: dict[int, dict] = {}
+    for activity in activities:
+        shown = present_report(
+            stored.get(activity.id),
+            workout_type=types.get(activity.id),
+            distance_meters=activity.distance_meters,
+            average_speed_mps=activity.average_speed_mps,
+        )
+        if shown is None:
+            continue
+        summary = shown.get("summary")
         if isinstance(summary, str) and summary.strip():
-            summaries[row.activity_id] = summary.strip()
+            summaries[activity.id] = {"summary": summary.strip(), "kind": shown.get("analysis_kind")}
     return summaries
 
 
@@ -324,6 +343,24 @@ def update_coach(
     return _coach_payload(coach, settings)
 
 
+@router.post("/api/coach/sync")
+def sync_roster(db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> dict:
+    """Pull the latest Garmin activities for the coach account and every signed-in athlete."""
+    jobs = []
+    if settings.garmin_key_configured:
+        try:
+            jobs.append(run_sync(db, settings, trigger="manual"))
+        except SyncInProgress as exc:
+            raise HTTPException(status_code=409, detail={"code": "sync_in_progress", "message": str(exc)}) from exc
+    jobs.extend(sync_saved_athlete_keys(db, settings))
+    return {
+        "synced": len(jobs),
+        "imported": sum(job.activities_imported for job in jobs),
+        "updated": sum(job.activities_updated for job in jobs),
+        "errors": [job.error_message for job in jobs if job.status != "succeeded" and job.error_message],
+    }
+
+
 @router.get("/api/coach/dashboard", response_model=DashboardOut)
 def dashboard(
     day: date | None = Query(default=None),
@@ -331,10 +368,10 @@ def dashboard(
     settings: Settings = Depends(get_settings),
 ) -> DashboardOut:
     coach, rows, _facts = _roster(db, settings)
-    brief = latest_brief(db, coach)
     zone = ZoneInfo(coach.timezone or "America/New_York")
     today = datetime.now(zone).date()
     selected = day or today
+    brief = brief_for_day(db, coach, selected)
     week_start = selected - timedelta(days=(selected.weekday() + 1) % 7)
     week_end = week_start + timedelta(days=7)
     recent = list(
@@ -349,7 +386,7 @@ def dashboard(
         ).all()
     )
     names = {row.id: row.display_name for row in rows}
-    summaries = _analysis_summaries(db, [activity.id for activity in recent])
+    summaries = _analysis_summaries(db, recent)
     roster_ids = [row.id for row in rows] or [0]
     plans = list(
         db.scalars(
@@ -374,8 +411,12 @@ def dashboard(
                 "athlete_name": names.get(activity.athlete_id),
                 "name": activity.name,
                 "distance_meters": activity.distance_meters,
+                "duration_seconds": activity.duration_seconds,
+                "average_pace_seconds_per_mile": pace_seconds_per_mile(activity.average_speed_mps),
+                "location_name": activity.location_name,
                 "start_time_local": activity.start_time_local,
-                "analysis_summary": summaries.get(activity.id),
+                "analysis_summary": None if summaries.get(activity.id) is None else summaries[activity.id]["summary"],
+                "analysis_kind": None if summaries.get(activity.id) is None else summaries[activity.id]["kind"],
             }
             for activity in recent
         ],
@@ -388,11 +429,19 @@ def dashboard(
     )
 
 
+class BriefCreate(BaseModel):
+    day: date | None = None
+
+
 @router.post("/api/coach/brief")
-def create_brief(db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> dict:
+def create_brief(
+    payload: BriefCreate | None = None,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict:
     coach, _rows, facts = _roster(db, settings)
     try:
-        brief = generate_brief(db, settings, coach, facts)
+        brief = generate_brief(db, settings, coach, facts, day=None if payload is None else payload.day)
     except RuntimeError as exc:
         code = str(exc).split(":", 1)[0]
         status = 503 if code == "openai_not_configured" else 502

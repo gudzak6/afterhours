@@ -26,6 +26,9 @@ function lines(value: unknown): string[] {
 }
 
 export function CoachingReport({ report }: { report: Record<string, unknown> }) {
+  if (report.analysis_kind === "easy" && typeof report.summary === "string") {
+    return <EasyRunNote summary={report.summary} />;
+  }
   if (typeof report.summary === "string" && typeof report.activity_classification === "string") {
     return <Assessment report={report} />;
   }
@@ -33,6 +36,16 @@ export function CoachingReport({ report }: { report: Record<string, unknown> }) 
     return <EarlierBriefing report={report} />;
   }
   return <LegacyReport report={report} />;
+}
+
+function EasyRunNote({ summary }: { summary: string }) {
+  const recovery = summary.startsWith("Recovery");
+  return (
+    <div className="space-y-3">
+      <span className="rounded-full bg-secondary px-3 py-1 text-sm font-medium">{recovery ? "Recovery run" : "Easy run"}</span>
+      <p className="max-w-2xl text-sm leading-6">{summary}</p>
+    </div>
+  );
 }
 
 function Assessment({ report }: { report: Record<string, unknown> }) {

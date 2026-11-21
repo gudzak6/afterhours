@@ -170,7 +170,7 @@ export function CommentList({
       <ul className="space-y-2 text-sm">
         {comments.map((note) => (
           <li key={note.id} className="rounded-lg bg-muted px-3 py-2">
-            <p className="text-xs tracking-wide text-muted-foreground uppercase">{note.author}</p>
+            <p className="text-xs tracking-wide text-muted-foreground uppercase">{note.author === "coach" ? "Coach Owen" : note.author}</p>
             <p className="mt-1 whitespace-pre-wrap">{note.body}</p>
           </li>
         ))}
