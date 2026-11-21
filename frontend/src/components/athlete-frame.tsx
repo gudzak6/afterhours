@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import LoginPage from "@/app/login/page";
+import { LoginForm } from "@/components/login-form";
 import { hasAccount, signedInAthleteId } from "@/lib/account";
 import { AthleteName } from "@/components/athlete-name";
 import { GarminConnect } from "@/components/athlete-onboarding";
@@ -92,7 +92,7 @@ export function AthleteFrame({ children }: { children: React.ReactNode }) {
   }
   if (phase === "sign-in") {
     return (
-      <LoginPage
+      <LoginForm
         onSignedIn={() => {
           setPhase("loading");
           return openSession();
