@@ -28,6 +28,17 @@ type PlanRow = {
   intensity: string | null;
 };
 
+type ActivityRow = {
+  athlete_id: number;
+  garmin_activity_id: number;
+  name: string | null;
+  start_time_local: string | null;
+  distance_meters: number | null;
+  duration_seconds: number | null;
+  average_speed_mps: number | null;
+  location_name: string | null;
+};
+
 const DEFAULT_TIMEZONE = "America/New_York";
 
 function raise(error: QueryError) {
@@ -48,6 +59,19 @@ async function readableRows<T>(query: PromiseLike<{ data: T[] | null; error: Que
   if (unreadable(error)) return [];
   raise(error);
   return data ?? [];
+}
+
+async function optionalRows<T>(query: PromiseLike<{ data: T[] | null; error: QueryError }>): Promise<T[]> {
+  const { data, error } = await query;
+  if (!error) return data ?? [];
+  if (unreadable(error) || error.code === "PGRST205" || error.code === "42P01") return [];
+  raise(error);
+  return [];
+}
+
+function paceSeconds(speed: number | null) {
+  if (speed == null || speed <= 0) return null;
+  return 1609.344 / speed;
 }
 
 function signedOut(error: QueryError) {
@@ -146,14 +170,17 @@ export async function loadAccountDashboard(supabase: SupabaseClient, day?: strin
     email_notifications_enabled: Boolean(profile?.email_notifications_enabled),
     email_configured: false,
   };
-  const rows = ((athletes ?? []) as AthleteRow[]).filter((row) => row.display_name.trim().toLowerCase() !== "new garmin athlete");
+  const rows = ((athletes ?? []) as AthleteRow[]).filter((row) => {
+    const name = row.display_name.trim().toLowerCase();
+    return name !== "new garmin athlete" && name !== "athlete";
+  });
   if (rows.length === 0) return emptyDashboard(coach, day);
 
   const today = todayInTimeZone(coach.timezone);
   const selected = day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : today;
   const week = weekContaining(selected);
   const supabaseIds = rows.map((row) => row.id);
-  const [goals, plans] = await Promise.all([
+  const [goals, plans, activities] = await Promise.all([
     readableRows<GoalRow>(supabase.from("training_goals").select("athlete_id, primary_race_goal").in("athlete_id", supabaseIds)),
     readableRows<PlanRow>(
       supabase
@@ -163,6 +190,15 @@ export async function loadAccountDashboard(supabase: SupabaseClient, day?: strin
         .gte("scheduled_date", week.start)
         .lt("scheduled_date", week.end)
         .order("scheduled_date"),
+    ),
+    optionalRows<ActivityRow>(
+      supabase
+        .from("activities")
+        .select("athlete_id, garmin_activity_id, name, start_time_local, distance_meters, duration_seconds, average_speed_mps, location_name")
+        .in("athlete_id", supabaseIds)
+        .gte("start_time_local", week.start)
+        .lt("start_time_local", week.end)
+        .order("start_time_local", { ascending: false }),
     ),
   ]);
 
@@ -177,24 +213,37 @@ export async function loadAccountDashboard(supabase: SupabaseClient, day?: strin
     plansByAthlete.set(plan.athlete_id, list);
   }
   const names = new Map<number, { id: number; name: string }>();
+  const runsByAthlete = new Map<number, ActivityRow[]>();
+  for (const activity of activities) {
+    const list = runsByAthlete.get(activity.athlete_id) ?? [];
+    list.push(activity);
+    runsByAthlete.set(activity.athlete_id, list);
+  }
   const roster: RosterAthlete[] = rows.map((row) => {
     const id = rosterId(row.local_id, row.id);
     names.set(row.id, { id, name: row.display_name });
     const weekPlans = plansByAthlete.get(row.id) ?? [];
     const miles = weekPlans.map((plan) => plan.distance_miles).filter((value): value is number => typeof value === "number");
+    const runs = runsByAthlete.get(row.id) ?? [];
+    const latest = runs[0];
+    const runMiles = runs
+      .map((activity) => activity.distance_meters)
+      .filter((value): value is number => typeof value === "number")
+      .reduce((sum, meters) => sum + meters / 1609.344, 0);
+    const latestMiles = latest?.distance_meters == null ? null : Math.round((latest.distance_meters / 1609.344) * 100) / 100;
     return {
       id,
       display_name: row.display_name,
       race_goal: goalByAthlete.get(row.id) ?? null,
       target_time: row.target_time,
-      weekly_miles: null,
-      recent_activity: null,
-      recent_activity_id: null,
-      recent_activity_at: null,
-      training_status: "no_data",
+      weekly_miles: runs.length === 0 ? null : runMiles,
+      recent_activity: latest ? `${latest.name || "Activity"}${latestMiles == null ? "" : ` · ${latestMiles} mi`}` : null,
+      recent_activity_id: latest?.garmin_activity_id ?? null,
+      recent_activity_at: latest?.start_time_local ?? null,
+      training_status: runs.length === 0 ? "no_data" : "on_track",
       attention_reasons: [],
       garmin_status: "not_connected",
-      ran_today: false,
+      ran_today: runs.some((activity) => activity.start_time_local?.startsWith(today) ?? false),
       planned_weekly_miles: miles.length === 0 ? null : miles.reduce((sum, value) => sum + value, 0),
       workouts_completed: 0,
       workouts_scheduled: weekPlans.length,
@@ -205,10 +254,25 @@ export async function loadAccountDashboard(supabase: SupabaseClient, day?: strin
 
   return {
     athlete_count: roster.length,
-    ran_today: 0,
+    ran_today: roster.filter((athlete) => athlete.ran_today).length,
     attention_count: 0,
     athletes: roster,
-    recent_activities: [],
+    recent_activities: activities.map((activity) => {
+      const athlete = names.get(activity.athlete_id);
+      return {
+        garmin_activity_id: activity.garmin_activity_id,
+        athlete_id: athlete?.id ?? activity.athlete_id,
+        athlete_name: athlete?.name ?? null,
+        name: activity.name,
+        distance_meters: activity.distance_meters,
+        duration_seconds: activity.duration_seconds,
+        average_pace_seconds_per_mile: paceSeconds(activity.average_speed_mps),
+        location_name: activity.location_name,
+        start_time_local: activity.start_time_local,
+        analysis_summary: null,
+        analysis_kind: null,
+      };
+    }),
     planned_workouts: plans.map((plan) => {
       const athlete = names.get(plan.athlete_id);
       return {
