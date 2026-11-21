@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.garmin.mapping import METERS_PER_MILE
-from app.models import ActivitySample
+from app.models import ActivitySample, TrainingGoal
 from app.services.history import FEET_PER_METER
 
 # A window faster than this is treated as a bad distance sample, not a best effort.
@@ -172,6 +172,45 @@ def _best_efforts(session: Session, runs: list) -> list[dict]:
     return efforts
 
 
-def running_stats(session: Session, activities: list, *, today: date) -> dict:
+def apply_saved_efforts(session: Session, athlete_id: int, efforts: list[dict]) -> list[dict]:
+    goal = session.scalar(select(TrainingGoal).where(TrainingGoal.athlete_id == athlete_id))
+    saved = goal.personal_records.get("best_efforts") if goal is not None and isinstance(goal.personal_records, dict) else None
+    if not isinstance(saved, dict):
+        return efforts
+    for effort in efforts:
+        value = saved.get(effort["label"])
+        if not isinstance(value, (int, float)) or value <= 0:
+            continue
+        effort["duration_seconds"] = float(value)
+        effort["garmin_activity_id"] = None
+        effort["start_time_local"] = None
+        effort["manual"] = True
+    return efforts
+
+
+def save_best_effort(session: Session, athlete_id: int, label: str, duration_seconds: float | None) -> None:
+    known = {name for name, _distance in EFFORTS}
+    if label not in known:
+        raise ValueError("That distance is not a best effort.")
+    goal = session.scalar(select(TrainingGoal).where(TrainingGoal.athlete_id == athlete_id))
+    if goal is None:
+        goal = TrainingGoal(athlete_id=athlete_id, personal_records={}, updated_at=datetime.now(UTC))
+        session.add(goal)
+    records = dict(goal.personal_records or {})
+    efforts = dict(records.get("best_efforts") or {})
+    if duration_seconds is None or duration_seconds <= 0:
+        efforts.pop(label, None)
+    else:
+        efforts[label] = float(duration_seconds)
+    records["best_efforts"] = efforts
+    goal.personal_records = records
+    goal.updated_at = datetime.now(UTC)
+    session.commit()
+
+
+def running_stats(session: Session, activities: list, *, today: date, athlete_id: int | None = None) -> dict:
     runs = [activity for activity in activities if _is_run(activity)]
-    return {"last_4_weeks": _last_four_weeks(runs, today=today), "best_efforts": _best_efforts(session, runs)}
+    efforts = _best_efforts(session, runs)
+    if athlete_id is not None:
+        apply_saved_efforts(session, athlete_id, efforts)
+    return {"last_4_weeks": _last_four_weeks(runs, today=today), "best_efforts": efforts}

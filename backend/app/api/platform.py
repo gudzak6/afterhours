@@ -17,6 +17,7 @@ from app.garmin.mapping import pace_seconds_per_mile
 from app.models import (
     Activity,
     Athlete,
+    AthleteThreshold,
     CoachingBrief,
     GarminConnection,
     PlanRevision,
@@ -39,11 +40,12 @@ from app.services.adherence import (
 )
 from app.coach.engine import present_report
 from app.services.brief import brief_for_day, deliver_daily_brief, generate_brief
-from app.services.efforts import running_stats
+from app.services.efforts import running_stats, save_best_effort
 from app.services.history import mileage_chart, weekly_mileage
 from app.services.program import next_monday, workouts_from_program, workouts_from_request
 from app.services.mailer import smtp_configured
 from app.services.mileage import as_utc
+from app.services.portal import goals_payload
 from app.services.roster import attention_reasons, training_status
 from app.services.athletes import delete_athlete
 from app.services.sync import SyncInProgress, athletes_for_coach, ensure_coach, run_sync, sync_saved_athlete_keys
@@ -167,7 +169,7 @@ def _brief_plan(plan: ScheduledWorkout, *, include_date: bool) -> dict:
 def _plans_for_brief(db: Session, facts: list[dict], day: date) -> tuple[dict[int, list[dict]], dict[int, list[dict]]]:
     athlete_ids = [int(item["athlete_id"]) for item in facts] or [0]
     week_start = day - timedelta(days=(day.weekday() + 1) % 7)
-    week_end = week_start + timedelta(days=7)
+    week_end = max(week_start + timedelta(days=7), day + timedelta(days=8))
     plans = list(
         db.scalars(
             select(ScheduledWorkout)
@@ -255,6 +257,73 @@ def _owned(db: Session, settings: Settings, athlete_id: int) -> Athlete:
     return athlete
 
 
+def _recent_runs(activities: list[Activity]) -> list[dict]:
+    dated = [activity for activity in activities if activity.start_time_local and len(activity.start_time_local) >= 10]
+    dated.sort(key=lambda activity: activity.start_time_local or "", reverse=True)
+    runs = []
+    for activity in dated[:16]:
+        pace = pace_seconds_per_mile(activity.average_speed_mps)
+        runs.append(
+            {
+                "date": activity.start_time_local[:10],
+                "name": activity.name,
+                "distance_miles": None if activity.distance_meters is None else round(activity.distance_meters / 1609.344, 2),
+                "pace_seconds_per_mile": None if pace is None else round(pace),
+                "average_heart_rate_bpm": activity.average_heart_rate_bpm,
+                "garmin_activity_id": activity.garmin_activity_id,
+            }
+        )
+    return runs
+
+
+def _stored_analyses(db: Session, activities: list[Activity]) -> list[dict]:
+    by_id = {activity.id: activity for activity in activities}
+    if not by_id:
+        return []
+    rows = list(
+        db.scalars(
+            select(WorkoutAnalysis)
+            .where(WorkoutAnalysis.activity_id.in_(by_id), WorkoutAnalysis.status == "ready")
+            .order_by(WorkoutAnalysis.id.desc())
+            .limit(8)
+        ).all()
+    )
+    seen: set[int] = set()
+    stored = []
+    for row in rows:
+        if row.activity_id in seen:
+            continue
+        seen.add(row.activity_id)
+        activity = by_id[row.activity_id]
+        report = row.report if isinstance(row.report, dict) else {}
+        summary = report.get("summary") if isinstance(report.get("summary"), str) else None
+        impact = report.get("training_impact") if isinstance(report.get("training_impact"), str) else None
+        stored.append(
+            {
+                "activity_date": activity.start_time_local[:10] if activity.start_time_local else None,
+                "garmin_activity_id": activity.garmin_activity_id,
+                "effort_level": report.get("effort_level") if isinstance(report.get("effort_level"), str) else None,
+                "summary": None if summary is None else summary[:500],
+                "training_impact": None if impact is None else impact[:300],
+            }
+        )
+        if len(stored) == 4:
+            break
+    return stored
+
+
+def _saved_thresholds(db: Session, athlete_id: int) -> list[dict]:
+    rows = db.scalars(select(AthleteThreshold).where(AthleteThreshold.athlete_id == athlete_id)).all()
+    return [
+        {
+            "name": row.name,
+            "pace_seconds_per_mile": row.pace_seconds_per_mile,
+            "heart_rate_bpm": row.heart_rate_bpm,
+        }
+        for row in rows
+    ]
+
+
 def _roster(db: Session, settings: Settings) -> tuple[object, list[RosterAthlete], list[dict]]:
     coach = ensure_coach(db, settings)
     athletes = athletes_for_coach(db, coach)
@@ -337,22 +406,40 @@ def _roster(db: Session, settings: Settings) -> tuple[object, list[RosterAthlete
                 "athlete_id": athlete.id,
                 "athlete_name": athlete.display_name,
                 "race_goal": None if goal is None else goal.primary_race_goal,
+                "target_time": athlete.target_time,
                 "ran_today": ran_today,
                 "training_status": status,
                 "attention_reasons": reasons,
                 "weekly_miles": current_week,
+                "weekly_miles_history": [
+                    {
+                        "week_start": item["week_start"],
+                        "distance_miles": None if item["distance_miles"] is None else round(item["distance_miles"], 1),
+                        "activity_count": item["activity_count"],
+                    }
+                    for item in (week or [])[-4:]
+                ],
                 "recent_activity": recent_label,
+                "recent_runs": _recent_runs(activities),
                 "garmin_activity_id": None if latest is None else latest.garmin_activity_id,
                 "stored_effort": effort,
                 "stored_goal_progress_status": goal_status,
                 "stored_positive_notes": [item for item in positive if isinstance(item, str)][:2],
                 "stored_summary": report.get("summary") if isinstance(report.get("summary"), str) else None,
+                "stored_analyses": _stored_analyses(db, activities),
+                "saved_thresholds": _saved_thresholds(db, athlete.id),
                 "planned_weekly_miles": None if plan_view["current_week"] is None else plan_view["current_week"]["planned_miles"],
                 "actual_weekly_miles": current_week,
                 "workouts_completed": 0 if plan_view["current_week"] is None else plan_view["current_week"]["completed_workouts"],
                 "workouts_scheduled": 0 if plan_view["current_week"] is None else plan_view["current_week"]["planned_workouts"],
                 "key_workout_status": plan_view["key_workout_status"],
                 "adherence_notes": plan_view["adherence_notes"],
+                "data_not_stored": [
+                    "resting_heart_rate",
+                    "hrv",
+                    "athlete_reported_fatigue",
+                    "athlete_reported_soreness",
+                ],
             }
         )
     return coach, rows, facts
@@ -563,12 +650,19 @@ def athlete_overview(
         key=lambda activity: as_utc(activity.start_time_utc),
         reverse=True,
     )[:6]
+    goals = goals_payload(db, athlete)
     return {
         "athlete": _athlete_out(db, athlete, settings).model_dump(mode="json"),
         "status": None if card is None else card.model_dump(),
         "weekly_mileage": weekly_mileage(activities, now=datetime.now(UTC)),
         "mileage_chart": mileage_chart(activities, today=today),
-        "running_stats": running_stats(db, activities, today=today),
+        "running_stats": running_stats(db, activities, today=today, athlete_id=athlete.id),
+        "goal": {
+            "primary_race_goal": goals["primary_race_goal"],
+            "goal_race_date": goals["goal_race_date"],
+            "target_time": goals["target_time"],
+        },
+        "races": goals["races"],
         "recent_workouts": [
             {
                 "garmin_activity_id": activity.garmin_activity_id,
@@ -580,6 +674,29 @@ def athlete_overview(
             for activity in recent
         ],
     }
+
+
+class BestEffortUpdate(BaseModel):
+    label: str
+    duration_seconds: float | None = None
+
+
+@router.patch("/api/athletes/{athlete_id}/best-efforts")
+def update_best_effort(
+    athlete_id: int,
+    payload: BestEffortUpdate,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    athlete = _owned(db, settings, athlete_id)
+    try:
+        save_best_effort(db, athlete.id, payload.label.strip(), payload.duration_seconds)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"message": str(exc)}) from exc
+    activities = list(db.scalars(select(Activity).where(Activity.athlete_id == athlete.id)).all())
+    coach = ensure_coach(db, settings)
+    today = datetime.now(ZoneInfo(coach.timezone or "America/New_York")).date()
+    return running_stats(db, activities, today=today, athlete_id=athlete.id)
 
 
 def _plan_view(db: Session, athlete_id: int, today: date):

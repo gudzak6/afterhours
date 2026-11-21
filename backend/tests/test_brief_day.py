@@ -65,3 +65,36 @@ def test_upcoming_brief_uses_the_plan_and_prior_training():
     assert athlete["prior_training"]["stored_summary"] == "Controlled aerobic execution."
     assert "attention_reasons" not in athlete
     assert "weekly_miles" not in athlete["prior_training"]
+
+
+def test_completed_day_keeps_history_before_the_brief_date():
+    payload = prepare_brief_payload(
+        date(2026, 11, 20),
+        date(2026, 11, 21),
+        [
+            {
+                "athlete_id": 4,
+                "athlete_name": "Joey",
+                "recent_runs": [
+                    {"date": "2026-11-21", "distance_miles": 6.0, "pace_seconds_per_mile": 500},
+                    {"date": "2026-11-20", "distance_miles": 8.12, "pace_seconds_per_mile": 480, "average_heart_rate_bpm": 129},
+                    {"date": "2026-11-18", "distance_miles": 8.55, "pace_seconds_per_mile": 490, "average_heart_rate_bpm": 126},
+                ],
+                "stored_analyses": [
+                    {"activity_date": "2026-11-21", "summary": "A later day."},
+                    {"activity_date": "2026-11-20", "summary": "Heart rate rose 2 bpm."},
+                ],
+                "data_not_stored": ["resting_heart_rate", "hrv"],
+            }
+        ],
+        {4: [{"title": "Easy", "detail": "5.00 mi"}]},
+        {4: [{"scheduled_date": "2026-11-23", "title": "Drills/hill strides"}]},
+    )
+    assert payload["day_relation"] == "past"
+    athlete = payload["roster"][0]
+    assert [run["date"] for run in athlete["runs_on_brief_date"]] == ["2026-11-20"]
+    assert [run["date"] for run in athlete["prior_runs"]] == ["2026-11-18"]
+    assert athlete["stored_analyses"][0]["activity_date"] == "2026-11-20"
+    assert athlete["workouts_after_brief_date"][0]["title"] == "Drills/hill strides"
+    assert "hrv" in athlete["data_not_stored"]
+    assert "recent_runs" not in athlete

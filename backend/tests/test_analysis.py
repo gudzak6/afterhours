@@ -168,12 +168,13 @@ def test_report_schema_rejects_an_empty_focus_list() -> None:
         validate_report(payload)
 
 
-def test_easy_run_summary_drops_the_split_review() -> None:
+def test_easy_run_summary_keeps_the_written_analysis() -> None:
     from app.coach.engine import present_report
 
+    summary = "You completed 8.12 miles at an average pace of 8:00 per mile, longer than the planned 5.0 miles."
     shown = present_report(
         {
-            "summary": "Joey completed 13.06 km at 8:00 per mile, with mile paces and a calculated elevation note.",
+            "summary": summary,
             "activity_classification": "Easy Run",
             "effort_level": "Easy",
         },
@@ -183,8 +184,7 @@ def test_easy_run_summary_drops_the_split_review() -> None:
     )
     assert shown is not None
     assert shown["analysis_kind"] == "easy"
-    assert shown["summary"] == "Easy run. 8.12 mi, 8:00 per mile."
-    assert "elevation" not in shown["summary"].lower()
+    assert shown["summary"] == summary
 
 
 def test_workout_summary_keeps_the_split_review() -> None:

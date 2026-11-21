@@ -568,6 +568,12 @@ export async function getAthleteOverview(athleteId: number) {
         start_time_local: string | null;
         workout_type: string | null;
       }>;
+      goal?: {
+        primary_race_goal: string | null;
+        goal_race_date: string | null;
+        target_time: string | null;
+      };
+      races?: RaceEntry[];
     }>(`/api/athletes/${athleteId}/overview`);
   } catch (error) {
     if (!serverMissing(error)) throw error;
@@ -930,6 +936,13 @@ export function saveAthleteGoal(athleteId: number, body: Record<string, unknown>
   return request<AthleteGoals>(`/api/portal/${athleteId}/goals`, {
     method: "PATCH",
     body: JSON.stringify(body),
+  });
+}
+
+export function saveBestEffort(athleteId: number, label: string, durationSeconds: number | null) {
+  return request<RunningStats>(`/api/athletes/${athleteId}/best-efforts`, {
+    method: "PATCH",
+    body: JSON.stringify({ label, duration_seconds: durationSeconds }),
   });
 }
 

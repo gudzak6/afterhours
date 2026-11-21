@@ -61,34 +61,34 @@ If the roster has one athlete, that is who the question is about. If a name matc
 When a saved analysis is present, you may use it as an earlier interpretation and say so. Measured pace, distance, and heart rate come from the activity tools.
 """
 
-REPORT_PROMPT = """You write a post-run assessment for the coach who is reading it, about one athlete on their roster.
-The reader is the coach, not the athlete. Use athlete_profile.display_name. Refer to the athlete by that name. Do not address the athlete as "you", and do not write as if the athlete will read this.
-Be specific and analytical. Do not be generic or motivational. Explain why the session matters for this athlete's development.
-Match the length to the stored workout type.
-An easy or recovery run gets a short note, not a workout review. The summary is one or two sentences: distance, average pace, that it was easy or recovery, and whether a planned session was stored. Do not list mile splits, repetition paces, the workout_breakdown label, or the elevation note. training_impact, fitness_indicators, and goal_progress are one sentence each. what_went_well and where_to_focus each contain one sentence. For where_to_focus, say there is nothing to review unless a measurement is clearly off for easy running.
-A workout gets the fuller review. Workouts are intervals, threshold, tempo, marathon pace, strides, progression, race, and long run. For those, keep each narrative section to about 2–4 sentences, and what_went_well and where_to_focus are 2–4 separate sentences.
+REPORT_PROMPT = """You write an activity analysis spoken to the athlete who did the run.
+Address the athlete as "you". Do not open with the athlete's name, and do not write "the athlete".
+Be specific. Use the measurements in the context. Do not be generic or motivational. Do not use the words optimize, enhance, or maximize.
+An easy run, a recovery run, and a workout all use the same four sections. An easy run is still a full analysis, not a one-sentence note.
 
-Use only numbers, history, goals, and thresholds present in the context. Do not invent splits, sensors, lactate thresholds, race results, zones, or a fitness prediction.
-If planned_vs_actual is null, say the planned session was not available. Do not compare the athlete with a plan that is not in the context.
-When planned_vs_actual is present, those mileage, repetition, pace, and recovery differences were already calculated. Do not recompute them. Use the calculated summary. A difference is not automatically poor execution: consider the workout purpose, the recorded effort, and whether the evidence is marked insufficient. Say whether the stored objective was met only from execution. Compare this execution with comparable_activities when those measurements exist. Suggest that the coach maintain, monitor, or review the plan, and do not change the plan yourself.
-On a workout, when metrics.workout_breakdown.label is present, that label and each repetition's pace were already calculated from the recording. Describe the session as that structure and quote those paces. Do not average different repetition distances into one pace, and do not describe a different session. metrics.repetitions can split one repetition across an automatic lap, so it is not the workout structure. On an easy or recovery run, ignore workout_breakdown. Automatic mile laps are not a workout.
-On a workout, when metrics.elevation_effect.available is true, the elevation note, the uphill and downhill pace differences, and the mile net climbs were already calculated. Discuss that elevation effect in the summary and in one of fitness_indicators, what_went_well, or where_to_focus. Quote the note. Do not recompute grade and do not invent a hill. If a slower mile or repetition lines up with a calculated climb, say so. If elevation_effect.available is false, say the elevation effect was not available. On an easy or recovery run, leave the elevation note out.
+Use only numbers, history, goals, and thresholds present in the context. Do not invent splits, sensors, lactate thresholds, race results, heart-rate zones, or a fitness prediction.
+If a heart-rate zone name is not in the context, give the heart rate in bpm and do not name a zone.
+If planned_vs_actual is null, do not mention a planned distance, pace, or workout. Do not say a planned session was unavailable.
+When planned_vs_actual is present, those mileage, repetition, pace, and recovery differences were already calculated. Do not recompute them. Use the calculated summary. A difference is not automatically poor execution. Say whether the stored objective was met only from that execution.
+Mention another day, such as yesterday or tomorrow, only when that workout appears in the context. Do not invent the surrounding plan.
+On a workout, when metrics.workout_breakdown.label is present, that label and each repetition's pace were already calculated from the recording. Describe the session as that structure and quote those paces. Do not average different repetition distances into one pace, and do not describe a different session. metrics.repetitions can split one repetition across an automatic lap, so it is not the workout structure. On an easy or recovery run, do not describe a repetition workout. If mile laps are stored, summarize them as a pace range in one sentence. Do not list every mile.
+On a workout, when metrics.elevation_effect.available is true, quote the elevation note. Do not recompute grade and do not invent a hill. If a slower mile or repetition lines up with a calculated climb, say so. If elevation_effect.available is false, leave elevation out. On an easy or recovery run, leave the elevation note out.
 Heart rate on repetitions shorter than 30 seconds is not evidence of how hard the effort was.
-Phrase activity_classification from the stored workout type, using coach language such as Interval Training, Easy Run, Threshold, Long Run, Strides, Tempo, Progression, or Recovery. Do not contradict the stored classification.
-Set effort_level to Easy, Moderate, or Hard Effort from the recorded pace, heart rate, and workout structure. If that evidence is thin, choose the closest level and name the uncertainty.
+Phrase activity_classification from the stored workout type, using labels such as Easy Run, Recovery, Interval Training, Threshold, Long Run, Strides, Tempo, or Progression. Do not contradict the stored classification.
+Set effort_level to Easy, Moderate, or Hard Effort from the recorded pace, heart rate, and workout structure. If that evidence is thin, choose the closest level.
 athlete_profile, comparable_activities, and recent_training are saved profile fields or measurements. Refer to a race goal, an earlier performance, or a lactate threshold only when that field is present.
-When athlete_profile.intake is present, those are the athlete's own answers: events, outcome and process goals, personal bests, recent races with a goal time and a result time, mileage, stipulations, and training preferences. Quote a race time only when that race is listed.
+When athlete_profile.intake is present, quote a race time only when that race is listed.
 prior_interpretations are earlier model text, not measurements. Do not treat an earlier conclusion as a fact.
-Call the athlete on track, building, or in need of attention only when the supplied measurements support it. Otherwise set goal_progress_status to insufficient_evidence.
-Points in where_to_focus are for a human coach to review. They do not change the training plan.
+Set goal_progress_status to on_track, building, or needs_attention only when the supplied measurements support it. Otherwise use insufficient_evidence.
+where_to_focus does not change the training plan.
 
 Write:
-- summary: for an easy or recovery run, distance, average pace, and the plan note only. For a workout, what the athlete completed, including distance, average pace, the workout_breakdown label and repetition paces when that object is present, the calculated elevation effect when it is available, and how it compared with a planned session only if one is stored.
-- training_impact: the physiological benefit this recorded session can support, such as VO2max, lactate threshold, aerobic endurance, speed development, or running economy, and what it cannot show.
-- fitness_indicators: what the workout suggests about current fitness, using the saved race goal, earlier comparable performances, and saved lactate thresholds when they exist.
-- what_went_well: specific positives such as consistent pacing, a strong finish, or a better comparable performance, each tied to a recorded number.
-- where_to_focus: specific pacing, recovery, intensity, or fatigue points, each tied to a recorded number.
-- goal_progress: a brief reading of the saved race goal. If the goal or the comparable evidence is missing, say so.
+- summary: one paragraph of 3 to 5 sentences. Distance, average pace, how it compared with the stored plan when one is present, heart rate when it is stored, and the pace range when laps are stored.
+- training_impact: one paragraph of 2 to 3 sentences on what this recorded session does, such as recovery, aerobic volume, or the quality the workout was for.
+- fitness_indicators: one sentence on what the recording can and cannot say about fitness.
+- what_went_well: 2 to 3 sentences about one recorded strength, each tied to a number in the context.
+- where_to_focus: 2 to 3 sentences about one recorded point to watch, each tied to a number in the context. If nothing is off, say what to carry into the next stored session.
+- goal_progress: one sentence. If the goal or the comparable evidence is missing, say so.
 """
 
 REPORT_JSON_SCHEMA = {
@@ -195,31 +195,6 @@ def session_kind(workout_type: str | None, report: dict | None = None) -> str:
     return "workout"
 
 
-def easy_summary(*, workout_type: str | None, distance_meters: float | None, average_speed_mps: float | None) -> str:
-    """One measured line for an easy or recovery run. Splits and hills are left out."""
-    from app.services.adherence import format_pace
-
-    label = "Recovery run" if workout_type == "recovery" else "Easy run"
-    parts = [label]
-    if isinstance(distance_meters, (int, float)):
-        parts.append(f"{distance_meters / 1609.344:.2f} mi")
-    pace = format_pace(pace_seconds_per_mile(average_speed_mps))
-    if pace:
-        parts.append(f"{pace} per mile")
-    if len(parts) == 1:
-        return f"{label}."
-    return f"{parts[0]}. {', '.join(parts[1:])}."
-
-
-def _brief_easy_text(summary: str) -> bool:
-    if len(summary) > 280:
-        return False
-    lowered = summary.lower()
-    if "elevation" in lowered or "mile pace" in lowered or "×" in summary:
-        return False
-    return True
-
-
 def present_report(
     report: dict | None,
     *,
@@ -227,23 +202,14 @@ def present_report(
     distance_meters: float | None,
     average_speed_mps: float | None,
 ) -> dict | None:
-    """Show a short easy-run note. Keep a workout's saved review as written."""
+    """Keep the written analysis. Mark easy runs so the dashboard can label them."""
+    del distance_meters, average_speed_mps
     if not isinstance(report, dict):
         return None
     shown = dict(report)
-    kind = session_kind(workout_type, report)
-    shown["analysis_kind"] = kind
+    shown["analysis_kind"] = session_kind(workout_type, report)
     summary = shown.get("summary")
-    if kind == "easy":
-        if not isinstance(summary, str) or not _brief_easy_text(summary.strip()):
-            shown["summary"] = easy_summary(
-                workout_type=workout_type,
-                distance_meters=distance_meters,
-                average_speed_mps=average_speed_mps,
-            )
-        else:
-            shown["summary"] = summary.strip()
-    elif isinstance(summary, str):
+    if isinstance(summary, str):
         shown["summary"] = summary.strip()
     return shown
 
@@ -735,7 +701,7 @@ TOOLS = [
 def _client(settings: Settings):
     from openai import OpenAI
 
-    return OpenAI(api_key=settings.openai_api_key)
+    return OpenAI(api_key=settings.openai_api_key, timeout=120.0, max_retries=1)
 
 
 def _completion(client, **kwargs):
@@ -950,9 +916,9 @@ def generate_report(session: Session, settings: Settings, athlete: Athlete, acti
     workout_type = (context.get("current_activity") or {}).get("activity", {}).get("workout_type")
     kind = session_kind(workout_type if isinstance(workout_type, str) else None)
     length_note = (
-        "This stored session is an easy or recovery run. Write the short note. Do not review splits or elevation."
+        "This stored session is an easy or recovery run. Write the same four sections. Summarize mile laps as a range when they are stored, and do not turn the run into a repetition workout."
         if kind == "easy"
-        else "This stored session is a workout. Write the fuller review, including the calculated structure and elevation when those fields are present."
+        else "This stored session is a workout. Write the same four sections, and include the calculated structure and elevation when those fields are present."
     )
     client = _client(settings)
     messages = [

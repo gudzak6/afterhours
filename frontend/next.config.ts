@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  experimental: {
+    // Brief generation waits on the model. The default 30s proxy cuts that off.
+    proxyTimeout: 120_000,
+  },
   async rewrites() {
     const backend = process.env.BACKEND_URL?.replace(/\/$/, "");
     // On Netlify, a rewrite to the local coaching server runs at the edge and

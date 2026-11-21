@@ -83,6 +83,10 @@ DISTANCES = (
     ("15k", 15000.0),
     ("10k", 10000.0),
     ("5k", 5000.0),
+    ("1 mile", 1609.344),
+    ("mile", 1609.344),
+    ("800m", 800.0),
+    ("400m", 400.0),
 )
 
 PREDICTIONS = (
@@ -884,7 +888,7 @@ def analytics(session: Session, settings: Settings, athlete: Athlete) -> dict:
     pace_weeks = _pace_by_week(activities, now=now)
     heart = _heart_rate_split(activities, classifications, today=today)
     load = _training_load(weeks)
-    stats = running_stats(session, activities, today=today)
+    stats = running_stats(session, activities, today=today, athlete_id=athlete.id)
     races = list(session.scalars(select(Race).where(Race.athlete_id == athlete.id)).all())
     lactate = session.scalars(
         select(LactateReading).where(LactateReading.athlete_id == athlete.id).order_by(LactateReading.measured_on, LactateReading.id)

@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { CoachingReport } from "@/components/coaching-report";
 import { WorkoutBreakdown } from "@/components/workout-breakdown";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createReport, deleteActivity, errorMessage, getActivity, type ActivityDetail } from "@/lib/api";
 import { formatActivityType, formatDuration, formatHeartRate, formatMiles, formatNumber, formatPace, formatWhen, hasField } from "@/lib/format";
 
@@ -109,8 +109,7 @@ export default function ActivityDetailPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Coaching analysis</CardTitle>
-          <CardDescription>Written from the stored workout and the calculated repetition paces.</CardDescription>
+          <CardTitle>Activity Analysis</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <Button type="button" disabled={busy !== null} onClick={() => void onReport()}>

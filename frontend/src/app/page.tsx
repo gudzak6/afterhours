@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AthleteName } from "@/components/athlete-name";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { mirrorRosterRuns } from "@/lib/account";
 import {
   createBrief,
   createReport,
@@ -398,6 +399,9 @@ export default function DashboardPage() {
   const [syncing, setSyncing] = useState(false);
   const [writingBrief, setWritingBrief] = useState(false);
   const requestId = useRef(0);
+  const viewedDay = useRef<string | null>(null);
+  const openedBrief = useRef(false);
+  viewedDay.current = selectedDay;
 
   const load = useCallback(async (day?: string) => {
     const id = requestId.current + 1;
@@ -409,6 +413,7 @@ export default function DashboardPage() {
       setDashboard(next);
       setSelectedDay((current) => day ?? current ?? next.today);
       setError(null);
+      void mirrorRosterRuns(next.recent_activities).catch(() => undefined);
     } catch (loadError) {
       if (requestId.current !== id) return;
       setError(errorMessage(loadError));
@@ -436,6 +441,59 @@ export default function DashboardPage() {
     return () => window.clearTimeout(timer);
   }, [load]);
 
+  const waitForStoredBrief = useCallback(async (day: string) => {
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 3000));
+      if (viewedDay.current !== day) return false;
+      try {
+        const next = await getDashboard(day);
+        if (viewedDay.current !== day) return false;
+        if (next.brief) {
+          setDashboard((current) =>
+            current ? { ...current, brief: next.brief, brief_created_at: next.brief_created_at } : next,
+          );
+          return true;
+        }
+      } catch {
+        // Keep looking. The model may still be writing.
+      }
+    }
+    return false;
+  }, []);
+
+  const writeBrief = useCallback(async (day: string, automatic = false) => {
+    setWritingBrief(true);
+    setNotice(null);
+    const started = Date.now();
+    try {
+      const result = await createBrief(day);
+      if (viewedDay.current !== day) return;
+      setDashboard((current) =>
+        current ? { ...current, brief: result.report, brief_created_at: result.created_at } : current,
+      );
+    } catch (briefError) {
+      if (viewedDay.current !== day) return;
+      const message = errorMessage(briefError);
+      const dropped = /not connected|did not return/i.test(message);
+      if (automatic && dropped && Date.now() - started > 20_000) {
+        const found = await waitForStoredBrief(day);
+        if (found || viewedDay.current !== day) return;
+      }
+      if (automatic && dropped) return;
+      setNotice(message);
+    } finally {
+      setWritingBrief(false);
+    }
+  }, [waitForStoredBrief]);
+
+  useEffect(() => {
+    if (!dashboard || !selectedDay || openedBrief.current || writingBrief) return;
+    if (shiftDay(selectedDay, -parseDay(selectedDay).getDay()) !== dashboard.week_start) return;
+    openedBrief.current = true;
+    if (dashboard.brief) return;
+    void writeBrief(selectedDay, true);
+  }, [dashboard, selectedDay, writingBrief, writeBrief]);
+
   async function toggleEmail() {
     if (!dashboard) return;
     const enabled = !dashboard.coach.email_notifications_enabled;
@@ -446,21 +504,6 @@ export default function DashboardPage() {
       setNotice(enabled ? "Daily email is on. One brief is sent at 7:00 in your timezone." : "Daily email is off. The brief stays on this page.");
     } catch (toggleError) {
       setNotice(errorMessage(toggleError));
-    }
-  }
-
-  async function writeBrief(day: string) {
-    setWritingBrief(true);
-    setNotice(null);
-    try {
-      const result = await createBrief(day);
-      setDashboard((current) =>
-        current ? { ...current, brief: result.report, brief_created_at: result.created_at } : current,
-      );
-    } catch (briefError) {
-      setNotice(errorMessage(briefError));
-    } finally {
-      setWritingBrief(false);
     }
   }
 
@@ -550,7 +593,9 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               {notice ? <p className="text-sm">{notice}</p> : null}
-              {dashboard.brief ? (
+              {writingBrief && !dashboard.brief ? (
+                <p className="text-sm text-muted-foreground">Writing the coaching brief for {dayLabel(selectedDay)}…</p>
+              ) : dashboard.brief ? (
                 <div className="space-y-2">
                   {selectedDay > dashboard.today ? (
                     <p className="text-xs tracking-[0.14em] text-muted-foreground uppercase">Preview · this day has not been run</p>

@@ -1,5 +1,8 @@
+"use client";
+
 import Link from "next/link";
-import type { RunningStats } from "@/lib/api";
+import { useState } from "react";
+import { errorMessage, saveBestEffort, type RunningStats } from "@/lib/api";
 
 function countLabel(value: number | null): string {
   if (value == null) return "—";
@@ -36,7 +39,110 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function AthleteStats({ stats }: { stats: RunningStats }) {
+function parseClock(value: string): number | null {
+  const text = value.trim();
+  if (!text || text === "—") return null;
+  if (!/^\d{1,2}(:\d{2}){1,2}$/.test(text)) return null;
+  const parts = text.split(":").map(Number);
+  if (parts.length === 2) {
+    if (parts[1] > 59) return null;
+    return parts[0] * 60 + parts[1];
+  }
+  if (parts[1] > 59 || parts[2] > 59) return null;
+  return parts[0] * 3600 + parts[1] * 60 + parts[2];
+}
+
+function EffortTime({
+  athleteId,
+  effort,
+  onSaved,
+}: {
+  athleteId: number;
+  effort: RunningStats["best_efforts"][number];
+  onSaved: (stats: RunningStats) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function save() {
+    const seconds = parseClock(draft);
+    if (draft.trim() && seconds == null) {
+      setError("Use a time like 5:05.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      onSaved(await saveBestEffort(athleteId, effort.label, seconds));
+      setEditing(false);
+    } catch (saveError) {
+      setError(errorMessage(saveError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <span className="text-right">
+        <input
+          autoFocus
+          value={draft}
+          disabled={busy}
+          aria-label={`${effort.label} time`}
+          placeholder="5:05"
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={() => void save()}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void save();
+            }
+            if (event.key === "Escape") setEditing(false);
+          }}
+          className="w-20 rounded border border-input bg-card px-2 py-1 text-right"
+        />
+        {error ? <span className="mt-1 block text-xs text-destructive">{error}</span> : null}
+      </span>
+    );
+  }
+
+  const time = effortLabel(effort.duration_seconds);
+  return (
+    <span className="flex items-center gap-2">
+      {effort.garmin_activity_id != null && effort.duration_seconds != null ? (
+        <Link href={`/activities/${effort.garmin_activity_id}`} className="font-medium text-primary hover:underline">
+          {time}
+        </Link>
+      ) : (
+        <span className={effort.duration_seconds == null ? "text-muted-foreground" : "font-medium"}>{effort.duration_seconds == null ? "—" : time}</span>
+      )}
+      <button
+        type="button"
+        className="text-xs text-muted-foreground underline"
+        onClick={() => {
+          setDraft(effort.duration_seconds == null ? "" : time);
+          setError(null);
+          setEditing(true);
+        }}
+      >
+        Edit
+      </button>
+    </span>
+  );
+}
+
+export function AthleteStats({
+  athleteId,
+  stats,
+  onChange,
+}: {
+  athleteId: number;
+  stats: RunningStats;
+  onChange: (stats: RunningStats) => void;
+}) {
   const recent = stats.last_4_weeks;
   return (
     <div className="space-y-5 text-sm">
@@ -51,18 +157,12 @@ export function AthleteStats({ stats }: { stats: RunningStats }) {
       </div>
       <div>
         <h3 className="font-medium">Best efforts</h3>
-        <p className="mt-1 text-muted-foreground">Fastest stretch found in the stored runs. A distance with no recording is left blank.</p>
+        <p className="mt-1 text-muted-foreground">Fastest stretch found in the stored runs. Edit a time to replace it. Clear the time to use the calculated one again.</p>
         <div className="mt-1 divide-y divide-border">
           {stats.best_efforts.map((effort) => (
             <div key={effort.label} className="flex items-center justify-between gap-4 py-2">
               <span>{effort.label}</span>
-              {effort.garmin_activity_id != null && effort.duration_seconds != null ? (
-                <Link href={`/activities/${effort.garmin_activity_id}`} className="font-medium text-primary hover:underline">
-                  {effortLabel(effort.duration_seconds)}
-                </Link>
-              ) : (
-                <span className="text-muted-foreground">—</span>
-              )}
+              <EffortTime athleteId={athleteId} effort={effort} onSaved={onChange} />
             </div>
           ))}
         </div>

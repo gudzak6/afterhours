@@ -154,7 +154,7 @@ export async function loadAccountDashboard(supabase: SupabaseClient, day?: strin
   if (!signedOut(userError)) raise(userError);
   const user = userData.user;
   const profileRequest = user
-    ? supabase.from("profiles").select("display_name, email, timezone, email_notifications_enabled").eq("id", user.id).maybeSingle()
+    ? supabase.from("profiles").select("display_name, email, timezone, email_notifications_enabled, role").eq("id", user.id).maybeSingle()
     : Promise.resolve({ data: null, error: null });
   const [{ data: profile, error: profileError }, { data: athletes, error: athleteError }] = await Promise.all([
     profileRequest,
@@ -164,7 +164,7 @@ export async function loadAccountDashboard(supabase: SupabaseClient, day?: strin
   raise(athleteError);
 
   const coach: CoachAccount = {
-    display_name: profile?.display_name || user?.email?.split("@")[0] || "Coach Owen",
+    display_name: profile?.role === "coach" ? profile.display_name : "Coach Owen",
     email: profile?.email ?? user?.email ?? null,
     timezone: profile?.timezone || DEFAULT_TIMEZONE,
     email_notifications_enabled: Boolean(profile?.email_notifications_enabled),
@@ -431,6 +431,12 @@ export async function loadStoredOverview(supabase: SupabaseClient, athleteId: nu
       start_time_local: run.start_time_local,
       workout_type: null,
     })),
+    goal: {
+      primary_race_goal: null,
+      goal_race_date: null,
+      target_time: row.target_time,
+    },
+    races: [],
   };
 }
 

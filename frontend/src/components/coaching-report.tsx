@@ -1,22 +1,3 @@
-const GOAL_STATUS: Record<string, { label: string; className: string }> = {
-  on_track: {
-    label: "On track",
-    className: "bg-emerald-100 text-emerald-900",
-  },
-  building: {
-    label: "Building",
-    className: "bg-amber-100 text-amber-950",
-  },
-  needs_attention: {
-    label: "Needs attention",
-    className: "bg-amber-200 text-amber-950",
-  },
-  insufficient_evidence: {
-    label: "Not enough evidence",
-    className: "bg-muted text-muted-foreground",
-  },
-};
-
 function text(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
@@ -26,10 +7,7 @@ function lines(value: unknown): string[] {
 }
 
 export function CoachingReport({ report }: { report: Record<string, unknown> }) {
-  if (report.analysis_kind === "easy" && typeof report.summary === "string") {
-    return <EasyRunNote summary={report.summary} />;
-  }
-  if (typeof report.summary === "string" && typeof report.activity_classification === "string") {
+  if (typeof report.summary === "string" && (typeof report.activity_classification === "string" || typeof report.training_impact === "string")) {
     return <Assessment report={report} />;
   }
   if (typeof report.workout_summary === "string") {
@@ -38,66 +16,40 @@ export function CoachingReport({ report }: { report: Record<string, unknown> }) 
   return <LegacyReport report={report} />;
 }
 
-function EasyRunNote({ summary }: { summary: string }) {
-  const recovery = summary.startsWith("Recovery");
-  return (
-    <div className="space-y-3">
-      <span className="rounded-full bg-secondary px-3 py-1 text-sm font-medium">{recovery ? "Recovery run" : "Easy run"}</span>
-      <p className="max-w-2xl text-sm leading-6">{summary}</p>
-    </div>
-  );
+function effortLabel(value: string) {
+  if (value === "Easy") return "Easy Effort";
+  if (value === "Moderate") return "Moderate Effort";
+  return value;
+}
+
+function paragraph(items: string[]) {
+  return items.join(" ");
 }
 
 function Assessment({ report }: { report: Record<string, unknown> }) {
-  const status = GOAL_STATUS[text(report.goal_progress_status)] ?? GOAL_STATUS.insufficient_evidence;
   const wentWell = lines(report.what_went_well);
   const focus = lines(report.where_to_focus);
-  const missing = lines(report.missing_information);
+  const effort = effortLabel(text(report.effort_level));
+  const classification = text(report.activity_classification);
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-full bg-secondary px-3 py-1 text-sm font-medium">{text(report.activity_classification)}</span>
-        <span className="rounded-full border border-border px-3 py-1 text-sm">{text(report.effort_level)}</span>
+        {effort ? <span className="rounded-full bg-emerald-100 px-3 py-1 text-sm font-medium text-emerald-900">{effort}</span> : null}
+        {classification ? <span className="rounded-full bg-emerald-100 px-3 py-1 text-sm font-medium text-emerald-900">{classification}</span> : null}
       </div>
       <Section title="Summary" body={text(report.summary)} />
-      <Section title="Training impact" body={text(report.training_impact)} />
-      <Section title="Fitness indicators" body={text(report.fitness_indicators)} />
+      <Section title="Training Impact" body={text(report.training_impact)} />
       {wentWell.length > 0 ? (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-950">
-          <p className="font-medium">What went well</p>
-          <ul className="mt-2 space-y-2">
-            {wentWell.map((item, index) => (
-              <li key={`well-${index}`}>{item}</li>
-            ))}
-          </ul>
+        <div className="border-l-4 border-emerald-500 pl-4">
+          <p className="font-semibold text-emerald-800">What Went Well</p>
+          <p className="mt-1 leading-6">{paragraph(wentWell)}</p>
         </div>
       ) : null}
       {focus.length > 0 ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-950">
-          <p className="font-medium">Where to focus</p>
-          <ul className="mt-2 space-y-2">
-            {focus.map((item, index) => (
-              <li key={`focus-${index}`}>{item}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      <div>
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="font-medium">Goal progress</p>
-          <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${status.className}`}>{status.label}</span>
-        </div>
-        <p className="mt-1 whitespace-pre-wrap">{text(report.goal_progress)}</p>
-      </div>
-      {missing.length > 0 ? (
-        <div>
-          <p className="font-medium">Missing information</p>
-          <ul className="mt-1 list-disc space-y-1 pl-5 text-muted-foreground">
-            {missing.map((item, index) => (
-              <li key={`missing-${index}`}>{item}</li>
-            ))}
-          </ul>
+        <div className="border-l-4 border-amber-500 pl-4">
+          <p className="font-semibold text-amber-800">Where to Focus</p>
+          <p className="mt-1 leading-6">{paragraph(focus)}</p>
         </div>
       ) : null}
     </div>

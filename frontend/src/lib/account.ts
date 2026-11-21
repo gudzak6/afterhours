@@ -100,13 +100,18 @@ export async function signedInAthleteId(): Promise<number | null> {
   const cached = Number(window.localStorage.getItem(cacheKey));
   if (Number.isFinite(cached) && cached > 0) return cached;
 
-  const { data: row, error } = await supabase.from("athletes").select("local_id").eq("user_id", user.id).maybeSingle();
+  const { data: rows, error } = await supabase.from("athletes").select("id, local_id, display_name, coach_id").eq("user_id", user.id).order("id", { ascending: false });
   if (error && error.code !== "PGRST205" && error.code !== "42P01") {
     throw new Error(error.message);
   }
-  if (row?.local_id) {
-    window.localStorage.setItem(cacheKey, String(row.local_id));
-    return Number(row.local_id);
+  const owned = (rows ?? []).filter((row) => row.local_id);
+  const named = blank(user.user_metadata?.display_name)?.toLowerCase();
+  const chosen = owned.find((row) => row.coach_id === user.id && named && row.display_name?.trim().toLowerCase() === named)
+    ?? owned.find((row) => row.coach_id === user.id)
+    ?? owned[0];
+  if (chosen?.local_id) {
+    window.localStorage.setItem(cacheKey, String(chosen.local_id));
+    return Number(chosen.local_id);
   }
 
   const displayName = blank(user.user_metadata?.display_name) || user.email?.split("@")[0] || "Athlete";
@@ -134,17 +139,18 @@ export async function prepareAccount() {
 async function ensureAthlete(localId: number, displayName?: string) {
   const { supabase, user } = await requireUser();
   await ensureProfile(supabase, user);
-  const { data, error } = await supabase
+  const { data: existingRows, error } = await supabase
     .from("athletes")
     .select("id")
     .eq("coach_id", user.id)
     .eq("local_id", localId)
-    .maybeSingle();
+    .limit(1);
   raise(error);
-  if (data) {
-    return { supabase, user, athleteId: data.id as number };
+  const existing = existingRows?.[0];
+  if (existing) {
+    return { supabase, user, athleteId: existing.id as number };
   }
-  const { data: created, error: insertError } = await supabase
+  const { data: createdRows, error: insertError } = await supabase
     .from("athletes")
     .insert({
       coach_id: user.id,
@@ -152,9 +158,9 @@ async function ensureAthlete(localId: number, displayName?: string) {
       local_id: localId,
       display_name: displayName?.trim() || "Athlete",
     })
-    .select("id")
-    .single();
+    .select("id");
   raise(insertError);
+  const created = createdRows?.[0];
   if (!created) throw new Error("The athlete record did not save.");
   return { supabase, user, athleteId: created.id as number };
 }
@@ -447,4 +453,48 @@ export async function mirrorPlanIfEmpty(localId: number, workouts: PlannedWorkou
   for (const workout of workouts) {
     await mirrorWorkout(localId, workout.id, draftFromWorkout(workout), false);
   }
+}
+
+export async function mirrorRosterRuns(
+  activities: Array<{
+    athlete_id: number;
+    garmin_activity_id: number;
+    name: string | null;
+    start_time_local: string | null;
+    distance_meters: number | null;
+    duration_seconds?: number | null;
+    average_pace_seconds_per_mile?: number | null;
+    location_name?: string | null;
+  }>,
+) {
+  if (activities.length === 0) return;
+  const supabase = createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return;
+  const localIds = [...new Set(activities.map((activity) => activity.athlete_id))];
+  const { data: athletes, error } = await supabase
+    .from("athletes")
+    .select("id, local_id")
+    .eq("coach_id", userData.user.id)
+    .in("local_id", localIds);
+  if (error) return;
+  const byLocal = new Map((athletes ?? []).map((athlete) => [Number(athlete.local_id), athlete.id as number]));
+  const rows = activities.flatMap((activity) => {
+    const athleteId = byLocal.get(activity.athlete_id);
+    if (!athleteId) return [];
+    const pace = activity.average_pace_seconds_per_mile;
+    return [{
+      athlete_id: athleteId,
+      garmin_activity_id: activity.garmin_activity_id,
+      name: activity.name,
+      start_time_local: activity.start_time_local,
+      distance_meters: activity.distance_meters,
+      duration_seconds: activity.duration_seconds ?? null,
+      average_speed_mps: pace != null && pace > 0 ? 1609.344 / pace : null,
+      location_name: activity.location_name ?? null,
+      updated_at: new Date().toISOString(),
+    }];
+  });
+  if (rows.length === 0) return;
+  await supabase.from("activities").upsert(rows, { onConflict: "athlete_id,garmin_activity_id" });
 }

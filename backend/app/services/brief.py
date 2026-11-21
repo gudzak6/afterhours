@@ -16,17 +16,27 @@ from app.security import redact_secrets
 from app.services.mailer import send_email, smtp_configured
 
 BRIEF_PROMPT = """You write one daily briefing for a distance-running coach who manages several athletes.
-Use only the roster facts supplied below. Do not invent athletes, workouts, paces, or missed sessions.
-If an athlete has no stored analysis, do not describe their workout execution.
-requires_attention should include athletes whose supplied reasons or adherence_notes of kind shortfall, missed, or partial are non-empty. Explain the supplied note. Do not add an athlete who is not in that evidence.
-adherence_notes are calculated planned-versus-actual results. Do not recompute mileage, repetitions, or pace.
-positive_developments should include athletes with a stored positive note or an adherence note of kind consistent.
-Mention athletes who are completing the prescribed plan when that note is present. Do not treat a small pace difference as a failure unless the note says the workout was partial.
-suggested_actions should be specific follow-ups for the coach. They are not applied to a training plan.
+Use only the roster facts supplied below. Do not invent athletes, workouts, paces, heart rates, trends, missed sessions, or athlete feedback.
+Measured distance, pace, and heart rate may be used from runs_on_brief_date and prior_runs. A stored_analyses entry is an earlier interpretation, not a new measurement, and it belongs to activity_date. Do not describe that interpretation as the workout on brief_date unless the dates match.
+adherence_notes are calculated planned-versus-actual results. Do not recompute mileage, repetitions, or pace. A completion count is not evidence of fitness, fatigue, or readiness. Do not call a future workout missed. Do not call a session missed unless an adherence note says it was confirmed missed.
 athlete_id and athlete_name must be copied from the roster. Do not use a name that is not in the roster.
 The brief is for brief_date. Do not describe a different day as if it were brief_date.
-When day_relation is not upcoming, daily_summary is the only text shown to the coach. Write it as one paragraph. Include who needs a follow-up, what went well, and what the coach should do. Do not leave that meaning for the other fields. Prefer a short briefing over a list of every workout.
-When day_relation is upcoming, you are an experienced elite endurance coach writing a planned-session analysis for another coach. You know aerobic and anaerobic development, lactate threshold and aerobic threshold, VO2max, neuromuscular speed and running economy, load and fatigue, progression, and race-specific preparation. brief_date has not happened. This is not a report of a completed day.
+When day_relation is today or past, you are an elite endurance coach briefing the head coach after reviewing the team's stored training. You know aerobic and anaerobic development, lactate threshold and aerobic threshold, VO2max, running economy, neuromuscular speed, load, fatigue, progression, and race preparation from the 800m through the marathon. Compare each athlete with their own prior_runs, weekly_miles_history, and saved_thresholds. Do not compare athletes with each other.
+For each finding you include, reason from observation, to how it compares with the prescription and that athlete's recent training, to what it may suggest, to why it matters, to one coaching decision. Put the result in the report. Do not print those five labels.
+daily_summary is the only text shown. Write it in third person, using athlete names, with these sections and a blank line between them:
+Executive Coaching Assessment
+Two to four sentences on the most important team observations, why they matter, and the decision in front of the coach. Do not open with how many athletes ran unless that number changes the decision. Do not say the team is progressing well when the evidence is too thin.
+Priority Athlete Findings
+At most five findings that could change a training decision, a prescription, readiness, recovery, development, or race preparation. For each, write the athlete name and a specific headline, then Evidence, Coaching interpretation, Recommended action, and Confidence (High, Medium, or Low). Skip athletes with nothing that changes a decision. One workout cannot establish a fitness change. Heart rate alone cannot establish recovery. Name what is observed and what is only an interpretation.
+Positive Training Developments
+Only improvements that prior_runs or repeated stored analyses support. Say why the change matters for the saved race goal. If none are supported, say that no longitudinal improvement is established.
+Upcoming Training Considerations
+Use workouts_after_brief_date. Connect the next few days to recent execution and load when both are stored. If that list is empty, say no upcoming workouts are stored.
+Data Limitations
+One short note on data_not_stored and any gap that blocks a conclusion. Do not let this section dominate the brief.
+Do not use filler such as excellent discipline, helps build endurance, continue monitoring, focus on recovery, no supplied notes flag an athlete, or appears to be doing well. A recommendation must name what to review and what later observation would change the decision. Do not repeat a finding in a later section. Do not stitch activity summaries together.
+requires_attention holds only those priority findings, with reason as the headline. positive_developments holds only the supported improvements. suggested_actions holds the recommended decision for each priority finding. These arrays must match the brief, not add new claims. They are not applied to a training plan.
+When day_relation is upcoming, ignore the team-brief sections above. You are an experienced elite endurance coach writing a planned-session analysis for another coach. You know aerobic and anaerobic development, lactate threshold and aerobic threshold, VO2max, neuromuscular speed and running economy, load and fatigue, progression, and race-specific preparation. brief_date has not happened. This is not a report of a completed day.
 daily_summary is the only text shown. Do not describe the workout. Explain why it was prescribed, how it should be executed, and what to judge afterward.
 For each athlete with a planned workout, write the athlete name, then these sections in this order. Put a blank line between sections and between athletes. Do not repeat a point in a later section.
 Workout Purpose: 2–3 sentences on the adaptation the session is meant to develop and why this session is a useful way to get it. Explain the mechanism and what the session costs. Do not define the workout type, and do not say it builds endurance or improves speed without that reasoning.
@@ -178,6 +188,28 @@ def prepare_brief_payload(
             continue
         copy = dict(item)
         copy["planned_for_brief_date"] = sessions
+        iso = day.isoformat()
+        runs = [run for run in copy.pop("recent_runs", []) if str(run.get("date") or "") <= iso]
+        copy["runs_on_brief_date"] = [run for run in runs if run.get("date") == iso]
+        copy["prior_runs"] = [run for run in runs if run.get("date") and run["date"] < iso][:12]
+        analyses = []
+        for entry in copy.get("stored_analyses") or []:
+            stamp = str(entry.get("activity_date") or "")
+            if stamp and stamp <= iso:
+                analyses.append(entry)
+        copy["stored_analyses"] = analyses[:4]
+        copy["workouts_after_brief_date"] = [
+            workout
+            for workout in surrounding.get(athlete_id, [])
+            if str(workout.get("scheduled_date") or "") > iso
+        ]
+        if not copy.get("data_not_stored"):
+            copy["data_not_stored"] = [
+                "resting_heart_rate",
+                "hrv",
+                "athlete_reported_fatigue",
+                "athlete_reported_soreness",
+            ]
         prepared.append(copy)
     return {
         "brief_date": day.isoformat(),
@@ -229,6 +261,8 @@ def generate_brief(
     today = datetime.now(zone).date()
     local_day = day or today
     payload = prepare_brief_payload(local_day, today, roster, plans_by_athlete, surrounding_by_athlete)
+    coach_id = coach.id
+    session.commit()
     messages = [
         {"role": "system", "content": BRIEF_PROMPT},
         {"role": "user", "content": json.dumps(payload, default=str)},
@@ -256,7 +290,7 @@ def generate_brief(
     if report is None:
         raise RuntimeError(f"brief_validation_failed: {error}")
     row = CoachingBrief(
-        coach_id=coach.id,
+        coach_id=coach_id,
         brief_date=local_day,
         status="ready",
         model=settings.openai_model,

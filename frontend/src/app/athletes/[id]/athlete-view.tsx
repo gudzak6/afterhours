@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { MessageThread } from "@/components/message-thread";
 import { TrainingPlan } from "@/components/training-plan";
+import { AthleteRaces } from "@/components/athlete-races";
 import { AthleteStats } from "@/components/athlete-stats";
 import { MileageHistory } from "@/components/mileage-history";
 import { WeeklyChart } from "@/components/weekly-chart";
@@ -19,6 +20,8 @@ import {
   getAthleteOverview,
   type Activity,
   type Athlete,
+  type AthleteGoals,
+  type RaceEntry,
   type RosterAthlete,
   type MileageChart,
   type RunningStats,
@@ -46,6 +49,8 @@ export default function AthletePage() {
   const [runningStats, setRunningStats] = useState<RunningStats | null>(null);
   const [recent, setRecent] = useState<Array<{ garmin_activity_id: number; name: string | null; distance_meters: number | null; start_time_local: string | null; workout_type: string | null }>>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [goal, setGoal] = useState<AthleteGoals | null>(null);
+  const [races, setRaces] = useState<RaceEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -61,6 +66,12 @@ export default function AthletePage() {
       setMileage(overview.mileage_chart);
       setRunningStats(overview.running_stats);
       setRecent(overview.recent_workouts);
+      setGoal(
+        overview.goal
+          ? { ...overview.goal, races: overview.races ?? [] }
+          : null,
+      );
+      setRaces(overview.races ?? []);
       setActivities(activityList.activities.filter((activity) => activity.athlete_id === athleteId));
       setError(null);
     } catch (loadError) {
@@ -127,6 +138,7 @@ export default function AthletePage() {
       {section === "overview" ? (
         <div className="grid items-start gap-4 min-[960px]:grid-cols-[minmax(0,1fr)_22rem]">
           <div className="space-y-4">
+            <AthleteRaces athleteId={athleteId} goal={goal} races={races} />
             {mileage ? (
               <Card>
                 <CardHeader>
@@ -182,7 +194,7 @@ export default function AthletePage() {
                   <CardDescription>Running only. The last four weeks are the four weeks before this one.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <AthleteStats stats={runningStats} />
+                  <AthleteStats athleteId={athleteId} stats={runningStats} onChange={setRunningStats} />
                 </CardContent>
               </Card>
             ) : null}
