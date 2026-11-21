@@ -227,8 +227,17 @@ export class ApiError extends Error {
 }
 
 export function errorMessage(error: unknown): string {
+  const raw = rawErrorMessage(error);
+  if (/<!doctype|<html/i.test(raw)) {
+    return "The coaching server did not return this page.";
+  }
+  return raw;
+}
+
+function rawErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     const body = error.body;
+    if (typeof body === "string" && body.trim()) return body;
     if (body && typeof body === "object") {
       const record = body as Record<string, unknown>;
       if (typeof record.error_message === "string" && record.error_message) {
@@ -241,6 +250,11 @@ export function errorMessage(error: unknown): string {
     return error.message;
   }
   return error instanceof Error ? error.message : "Request failed";
+}
+
+function missingCoachingApi(error: unknown) {
+  if (!(error instanceof ApiError) || error.status < 500) return false;
+  return true;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -262,8 +276,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     try {
       body = JSON.parse(text) as unknown;
     } catch {
-      const plain = text.replace(/\s+/g, " ").trim().slice(0, 240);
-      throw new ApiError(plain || "The API returned a response that was not JSON.", response.status, text);
+      throw new ApiError("The coaching server is not connected to this site.", response.status || 502, null);
     }
   }
   if (!response.ok) {
@@ -286,8 +299,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-export function getActivities(limit = 100) {
-  return request<ActivityList>(`/api/activities?limit=${limit}`);
+function serverMissing(error: unknown) {
+  return error instanceof ApiError && (error.status === 404 || error.status >= 500 || /not connected/i.test(error.message));
+}
+
+export async function getActivities(limit = 100) {
+  try {
+    return await request<ActivityList>(`/api/activities?limit=${limit}`);
+  } catch (error) {
+    if (!serverMissing(error)) throw error;
+    const [{ createClient }, { loadStoredActivities }] = await Promise.all([
+      import("@/utils/supabase/client"),
+      import("@/lib/account-dashboard"),
+    ]);
+    return loadStoredActivities(createClient(), limit);
+  }
 }
 
 export function getActivity(activityId: number) {
@@ -527,21 +553,30 @@ export type RunningStats = {
   }>;
 };
 
-export function getAthleteOverview(athleteId: number) {
-  return request<{
-    athlete: Athlete;
-    status: RosterAthlete | null;
-    weekly_mileage: WeeklyMileage[];
-    mileage_chart: MileageChart;
-    running_stats: RunningStats;
-    recent_workouts: Array<{
-      garmin_activity_id: number;
-      name: string | null;
-      distance_meters: number | null;
-      start_time_local: string | null;
-      workout_type: string | null;
-    }>;
-  }>(`/api/athletes/${athleteId}/overview`);
+export async function getAthleteOverview(athleteId: number) {
+  try {
+    return await request<{
+      athlete: Athlete;
+      status: RosterAthlete | null;
+      weekly_mileage: WeeklyMileage[];
+      mileage_chart: MileageChart;
+      running_stats: RunningStats;
+      recent_workouts: Array<{
+        garmin_activity_id: number;
+        name: string | null;
+        distance_meters: number | null;
+        start_time_local: string | null;
+        workout_type: string | null;
+      }>;
+    }>(`/api/athletes/${athleteId}/overview`);
+  } catch (error) {
+    if (!serverMissing(error)) throw error;
+    const [{ createClient }, { loadStoredOverview }] = await Promise.all([
+      import("@/utils/supabase/client"),
+      import("@/lib/account-dashboard"),
+    ]);
+    return loadStoredOverview(createClient(), athleteId);
+  }
 }
 
 export type PlanWeek = {
@@ -599,8 +634,17 @@ export type PlanView = {
   workouts: PlannedWorkout[];
 };
 
-export function getAthletePlan(athleteId: number) {
-  return request<PlanView>(`/api/athletes/${athleteId}/plan`);
+export async function getAthletePlan(athleteId: number) {
+  try {
+    return await request<PlanView>(`/api/athletes/${athleteId}/plan`);
+  } catch (error) {
+    if (!serverMissing(error)) throw error;
+    const [{ createClient }, { loadStoredPlan }] = await Promise.all([
+      import("@/utils/supabase/client"),
+      import("@/lib/account-dashboard"),
+    ]);
+    return loadStoredPlan(createClient(), athleteId);
+  }
 }
 
 export function addAthletePlan(athleteId: number, body: Record<string, unknown>) {
@@ -855,8 +899,13 @@ export function addWorkoutComment(athleteId: number, body: Record<string, unknow
   });
 }
 
-export function getMessages(athleteId: number) {
-  return request<{ messages: WorkoutNote[] }>(`/api/portal/${athleteId}/messages`);
+export async function getMessages(athleteId: number) {
+  try {
+    return await request<{ messages: WorkoutNote[] }>(`/api/portal/${athleteId}/messages`);
+  } catch (error) {
+    if (!serverMissing(error)) throw error;
+    return { messages: [] };
+  }
 }
 
 export function sendMessage(athleteId: number, author: "athlete" | "coach", body: string) {

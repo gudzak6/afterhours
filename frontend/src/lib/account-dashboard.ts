@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { CoachAccount, CoachDashboard, RosterAthlete } from "@/lib/api";
+import type { Activity, Athlete, CoachAccount, CoachDashboard, MileageChart, PlanView, PlannedWorkout, PlanWeek, RosterAthlete, RunningStats, WeeklyMileage } from "@/lib/api";
 
 type QueryError = { message: string; code?: string; name?: string } | null;
 
@@ -289,5 +289,280 @@ export async function loadAccountDashboard(supabase: SupabaseClient, day?: strin
     brief: null,
     brief_created_at: null,
     coach,
+  };
+}
+
+function weekStartFor(local: string) {
+  const [year, month, day] = local.slice(0, 10).split("-").map(Number);
+  const date = new Date(Date.UTC(year, (month || 1) - 1, day || 1));
+  date.setUTCDate(date.getUTCDate() - date.getUTCDay());
+  return date.toISOString().slice(0, 10);
+}
+
+function addDays(iso: string, days: number) {
+  const [year, month, day] = iso.split("-").map(Number);
+  const date = new Date(Date.UTC(year, (month || 1) - 1, day || 1));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+async function storedRuns(supabase: SupabaseClient, athleteIds: number[]) {
+  if (athleteIds.length === 0) return [];
+  return optionalRows<ActivityRow>(
+    supabase
+      .from("activities")
+      .select("athlete_id, garmin_activity_id, name, start_time_local, distance_meters, duration_seconds, average_speed_mps, location_name")
+      .in("athlete_id", athleteIds)
+      .order("start_time_local", { ascending: false }),
+  );
+}
+
+function milesOf(meters: number | null) {
+  return meters == null ? null : meters / 1609.344;
+}
+
+export async function loadStoredActivities(supabase: SupabaseClient, limit = 100): Promise<{ activities: Activity[]; total: number }> {
+  const { data, error } = await supabase.rpc("roster_athletes");
+  raise(error);
+  const roster = (data ?? []) as AthleteRow[];
+  const runs = await storedRuns(supabase, roster.map((row) => row.id));
+  const localBySupabase = new Map(roster.map((row) => [row.id, rosterId(row.local_id, row.id)]));
+  const names = new Map(roster.map((row) => [row.id, row.display_name]));
+  const activities = runs.slice(0, limit).map((run) => storedActivity(run, localBySupabase.get(run.athlete_id) ?? run.athlete_id, names.get(run.athlete_id) ?? null));
+  return { activities, total: runs.length };
+}
+
+export async function loadStoredOverview(supabase: SupabaseClient, athleteId: number) {
+  const { data, error } = await supabase.rpc("roster_athletes");
+  raise(error);
+  const roster = (data ?? []) as AthleteRow[];
+  const row = roster.find((item) => rosterId(item.local_id, item.id) === athleteId);
+  if (!row) throw new Error("That athlete is not on the roster.");
+  const localId = rosterId(row.local_id, row.id);
+  const runs = await storedRuns(supabase, [row.id]);
+  const weeks = new Map<string, { count: number; meters: number; seconds: number }>();
+  for (const run of runs) {
+    if (!run.start_time_local) continue;
+    const start = weekStartFor(run.start_time_local);
+    const current = weeks.get(start) ?? { count: 0, meters: 0, seconds: 0 };
+    current.count += 1;
+    current.meters += run.distance_meters ?? 0;
+    current.seconds += run.duration_seconds ?? 0;
+    weeks.set(start, current);
+  }
+  const weekly_mileage: WeeklyMileage[] = [...weeks.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([week_start, totals]) => ({
+      week_start,
+      activity_count: totals.count,
+      distance_meters: totals.meters,
+      distance_miles: totals.meters / 1609.344,
+    }));
+  const currentWeek = weekStartFor(new Date().toISOString());
+  const thisWeek = weekly_mileage.find((week) => week.week_start === currentWeek);
+  const prior = weekly_mileage.filter((week) => week.week_start < currentWeek).slice(-4);
+  const priorMeters = prior.reduce((sum, week) => sum + (week.distance_meters ?? 0), 0);
+  const priorSeconds = prior.reduce((sum, week) => sum + (weeks.get(week.week_start)?.seconds ?? 0), 0);
+  const mileage_chart: MileageChart = {
+    week_start: currentWeek,
+    week_end: addDays(currentWeek, 6),
+    distance_miles: thisWeek?.distance_miles ?? null,
+    duration_seconds: weeks.get(currentWeek)?.seconds ?? null,
+    elevation_feet: null,
+    weeks: weekly_mileage.map((week) => ({
+      week_start: week.week_start,
+      week_end: addDays(week.week_start, 6),
+      distance_miles: week.distance_miles,
+      activity_count: week.activity_count,
+      current: week.week_start === currentWeek,
+    })),
+    runs: runs
+      .filter((run) => run.start_time_local != null && weekStartFor(run.start_time_local) === currentWeek)
+      .map((run) => ({
+        garmin_activity_id: run.garmin_activity_id,
+        name: run.name,
+        start_time_local: run.start_time_local,
+        distance_miles: milesOf(run.distance_meters),
+        duration_seconds: run.duration_seconds,
+        elevation_feet: null,
+      })),
+  };
+  const running_stats: RunningStats = {
+    last_4_weeks: {
+      activities_per_week: prior.length === 0 ? null : prior.reduce((sum, week) => sum + week.activity_count, 0) / prior.length,
+      distance_miles: prior.length === 0 ? null : priorMeters / 1609.344,
+      duration_seconds: prior.length === 0 ? null : priorSeconds,
+      elevation_feet: null,
+    },
+    best_efforts: [],
+  };
+  const athlete: Athlete = {
+    id: localId,
+    display_name: row.display_name,
+    running_experience: null,
+    typical_weekly_mileage: null,
+    max_heart_rate_bpm: null,
+    target_time: row.target_time,
+  };
+  const status: RosterAthlete = {
+    id: localId,
+    display_name: row.display_name,
+    race_goal: null,
+    target_time: row.target_time,
+    weekly_miles: thisWeek?.distance_miles ?? null,
+    recent_activity: null,
+    recent_activity_id: null,
+    recent_activity_at: null,
+    training_status: runs.length === 0 ? "no_data" : "on_track",
+    attention_reasons: [],
+    garmin_status: "not_connected",
+    ran_today: false,
+  };
+  return {
+    athlete,
+    status,
+    weekly_mileage,
+    mileage_chart,
+    running_stats,
+    recent_workouts: runs.slice(0, 8).map((run) => ({
+      garmin_activity_id: run.garmin_activity_id,
+      name: run.name,
+      distance_meters: run.distance_meters,
+      start_time_local: run.start_time_local,
+      workout_type: null,
+    })),
+  };
+}
+
+const QUALITY_TYPES = new Set(["intervals", "threshold", "tempo", "marathon_pace", "race", "strides", "progression"]);
+
+function mondayOf(iso: string) {
+  const [year, month, day] = iso.slice(0, 10).split("-").map(Number);
+  const date = new Date(Date.UTC(year, (month || 1) - 1, day || 1));
+  const weekday = date.getUTCDay();
+  date.setUTCDate(date.getUTCDate() - (weekday === 0 ? 6 : weekday - 1));
+  return date.toISOString().slice(0, 10);
+}
+
+function localToday() {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
+export async function loadStoredPlan(supabase: SupabaseClient, athleteId: number): Promise<PlanView> {
+  const { data, error } = await supabase.rpc("roster_athletes");
+  raise(error);
+  const roster = (data ?? []) as AthleteRow[];
+  const row = roster.find((item) => rosterId(item.local_id, item.id) === athleteId);
+  if (!row) return { trend: null, weeks: [], workouts: [] };
+  const [stored, runs] = await Promise.all([
+    readableRows<PlanRow & { details: string | null; warmup: string | null; cooldown: string | null; recovery_seconds: number | null; coach_notes: string | null }>(
+      supabase
+        .from("scheduled_workouts")
+        .select("id, athlete_id, scheduled_date, title, details, workout_type, distance_miles, warmup, cooldown, repetitions, rep_distance_miles, recovery_seconds, target_pace, intensity, coach_notes")
+        .eq("athlete_id", row.id)
+        .order("scheduled_date"),
+    ),
+    storedRuns(supabase, [row.id]),
+  ]);
+  const today = localToday();
+  const workouts: PlannedWorkout[] = stored.map((plan) => ({
+    id: plan.id,
+    scheduled_date: plan.scheduled_date,
+    title: plan.title,
+    workout_type: plan.workout_type,
+    distance_miles: plan.distance_miles,
+    warmup: plan.warmup,
+    cooldown: plan.cooldown,
+    repetitions: plan.repetitions,
+    rep_distance_miles: plan.rep_distance_miles,
+    recovery_seconds: plan.recovery_seconds,
+    target_pace: plan.target_pace,
+    intensity: plan.intensity,
+    coach_notes: plan.coach_notes,
+    details: plan.details,
+    status: plan.scheduled_date >= today ? "scheduled" : "unmatched",
+    execution: null,
+    summary: null,
+    match: null,
+    candidates: [],
+    original_prescription: null,
+    revisions: [],
+  }));
+  if (workouts.length === 0) return { trend: null, weeks: [], workouts: [] };
+  const first = mondayOf(workouts[0].scheduled_date);
+  const last = mondayOf(workouts[workouts.length - 1].scheduled_date);
+  const weeks: PlanWeek[] = [];
+  for (let cursor = first; cursor <= last; cursor = addDays(cursor, 7)) {
+    const end = addDays(cursor, 7);
+    const weekPlans = workouts.filter((plan) => plan.scheduled_date >= cursor && plan.scheduled_date < end);
+    const known = weekPlans.map((plan) => plan.distance_miles).filter((value): value is number => typeof value === "number");
+    const planned = known.length === 0 ? null : known.reduce((sum, value) => sum + value, 0);
+    const weekRuns = runs.filter((run) => {
+      const day = run.start_time_local?.slice(0, 10);
+      return day != null && day >= cursor && day < end && run.distance_meters != null;
+    });
+    const actual = weekRuns.length === 0 ? null : weekRuns.reduce((sum, run) => sum + (run.distance_meters ?? 0) / 1609.344, 0);
+    const complete = weekPlans.length > 0 && known.length === weekPlans.length;
+    const quality = weekPlans.filter((plan) => plan.workout_type != null && QUALITY_TYPES.has(plan.workout_type));
+    const longRuns = weekPlans.filter((plan) => plan.workout_type === "long_run" && plan.distance_miles != null);
+    const scheduled = weekPlans.filter((plan) => plan.status === "scheduled").length;
+    weeks.push({
+      week_start: cursor,
+      in_progress: cursor <= today && today < end,
+      planned_miles: planned,
+      planned_miles_complete: complete,
+      actual_miles: actual,
+      variance_miles: complete && planned && actual != null ? actual - planned : null,
+      variance_percent: complete && planned && actual != null ? ((actual - planned) / planned) * 100 : null,
+      planned_workouts: weekPlans.length,
+      completed_workouts: 0,
+      partial_workouts: 0,
+      still_scheduled: scheduled,
+      confirmed_missed: 0,
+      unmatched: weekPlans.length - scheduled,
+      planned_quality: quality.length,
+      completed_quality: 0,
+      partial_quality: 0,
+      planned_long_run_miles: longRuns.length === 0 ? null : longRuns.reduce((sum, plan) => sum + (plan.distance_miles ?? 0), 0),
+      actual_long_run_miles: null,
+      adherence: weekPlans.length === 0 ? null : 0,
+    });
+  }
+  return { trend: null, weeks, workouts };
+}
+
+function storedActivity(run: ActivityRow, athleteId: number, athleteName: string | null): Activity {
+  return {
+    id: run.garmin_activity_id,
+    garmin_activity_id: run.garmin_activity_id,
+    name: run.name,
+    activity_type_key: null,
+    start_time_local: run.start_time_local,
+    start_time_gmt: null,
+    start_time_utc: null,
+    distance_meters: run.distance_meters,
+    distance_miles: milesOf(run.distance_meters),
+    duration_seconds: run.duration_seconds,
+    moving_duration_seconds: null,
+    elapsed_duration_raw: null,
+    average_speed_mps: run.average_speed_mps,
+    average_pace_seconds_per_mile: run.average_speed_mps != null && run.average_speed_mps > 0 ? 1609.344 / run.average_speed_mps : null,
+    average_heart_rate_bpm: null,
+    max_heart_rate_bpm: null,
+    elevation_gain_meters: null,
+    elevation_loss_meters: null,
+    average_cadence_spm: null,
+    calories: null,
+    lap_count: null,
+    location_name: run.location_name,
+    manual_activity: null,
+    import_status: "stored",
+    analysis_status: "not_started",
+    present_fields: [],
+    athlete_id: athleteId,
+    athlete_name: athleteName,
   };
 }
