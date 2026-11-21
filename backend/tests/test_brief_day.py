@@ -39,7 +39,7 @@ def test_friday_does_not_show_an_older_brief():
     assert stored.report["daily_summary"].startswith("Athlete logged a run")
 
 
-def test_upcoming_brief_keeps_only_the_plan():
+def test_upcoming_brief_uses_the_plan_and_prior_training():
     payload = prepare_brief_payload(
         date(2026, 11, 23),
         date(2026, 11, 21),
@@ -48,15 +48,20 @@ def test_upcoming_brief_keeps_only_the_plan():
                 "athlete_id": 4,
                 "athlete_name": "Joey",
                 "attention_reasons": ["4 confirmed missed sessions"],
+                "race_goal": "New York City Marathon",
                 "recent_activity": "New York Running · 8.12 mi",
                 "stored_summary": "Controlled aerobic execution.",
+                "weekly_miles": None,
             }
         ],
-        {4: [{"title": "Drills/hill strides", "detail": "5.00 mi"}]},
+        {4: [{"title": "Drills/hill strides", "detail": "5.00 mi", "prescription": "Hill strides x 4"}]},
+        {4: [{"scheduled_date": "2026-11-25", "title": "LT1/2", "detail": "8.00 mi"}]},
     )
     assert payload["day_relation"] == "upcoming"
     athlete = payload["roster"][0]
-    assert athlete["planned_for_brief_date"] == [{"title": "Drills/hill strides", "detail": "5.00 mi"}]
+    assert athlete["planned_for_brief_date"][0]["prescription"] == "Hill strides x 4"
+    assert athlete["surrounding_workouts"][0]["title"] == "LT1/2"
+    assert athlete["prior_training"]["race_goal"] == "New York City Marathon"
+    assert athlete["prior_training"]["stored_summary"] == "Controlled aerobic execution."
     assert "attention_reasons" not in athlete
-    assert "stored_summary" not in athlete
-    assert athlete["earlier_activity"] == "New York Running · 8.12 mi"
+    assert "weekly_miles" not in athlete["prior_training"]

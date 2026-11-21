@@ -21,6 +21,19 @@ Put extra instructions from the program in notes. Leave a field null when it is 
 List any session you could not date in skipped. Do not invent a date for it.
 """
 
+PLAN_REQUEST_PROMPT = """You are an experienced elite endurance coach. A coach has asked you to write a training plan. Write the sessions yourself.
+A request such as "I want a plan for training for the mile" or "I want a plan for coach training for the mile" means author a mile plan. Do not wait for a document, and do not reply that no program was supplied.
+The plan starts on the anchor date. Write six weeks. Put each session on a weekday. Include easy running, one longer run, strides or short hills, and event-specific work. Leave at least one easier day between hard sessions. Do not make every day hard.
+For the mile, develop aerobic support, running economy and speed, and race-specific intensity around 800m to mile effort. Early weeks carry more easy running and strides. Later weeks add shorter, faster repetitions. The last week eases before a short race-pace session.
+For another distance, use the same standard and match the work to that event. A 5K needs VO2max and threshold. A marathon needs more easy volume, a longer run, and marathon-pace work.
+Use an athlete fact only when it is supplied. Do not invent a personal best, a threshold pace, a weekly mileage, or a weakness. When no pace is known, describe the effort in notes and leave target_pace null.
+workout_type must be one of: easy, recovery, long_run, intervals, threshold, tempo, marathon_pace, strides, progression, race, other.
+distance_miles is the total distance of the session you are prescribing.
+repetitions and rep_distance_miles are only for the faster pieces you are prescribing. recovery_seconds is the rest between those pieces when you prescribe one.
+Return dates as YYYY-MM-DD. Keep the title short, the way a coach would write it on a plan.
+Put how the session should feel in notes. skipped stays empty.
+"""
+
 PROGRAM_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -174,6 +187,63 @@ def _from_model(settings: Settings, text: str, *, today: date, start: date) -> t
             continue
         plans.append(stored)
     return plans[:120], skipped[:40]
+
+
+def workouts_from_request(
+    settings: Settings,
+    request: str,
+    *,
+    today: date,
+    start: date,
+    athlete_name: str | None = None,
+    race_goal: str | None = None,
+    target_time: str | None = None,
+) -> tuple[list[dict], list[str], str]:
+    from app.coach.engine import _client, _completion, openai_configured
+
+    ask = request.strip()
+    if len(ask) < 8:
+        raise ValueError("Describe the plan you want.")
+    if not openai_configured(settings):
+        raise RuntimeError("openai_not_configured")
+    facts = [f"Athlete: {athlete_name or 'Athlete'}"]
+    if race_goal:
+        facts.append(f"Saved race goal: {race_goal}")
+    if target_time:
+        facts.append(f"Saved target time: {target_time}")
+    completion = _completion(
+        _client(settings),
+        model=settings.openai_model,
+        messages=[
+            {"role": "system", "content": PLAN_REQUEST_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    f"Today is {today.isoformat()}. The anchor date is {start.isoformat()}.\n"
+                    + "\n".join(facts)
+                    + f"\n\nCoach request:\n{ask[:4000]}"
+                ),
+            },
+        ],
+        response_format={
+            "type": "json_schema",
+            "json_schema": {"name": "training_program", "strict": True, "schema": PROGRAM_SCHEMA},
+        },
+    )
+    try:
+        payload = json.loads(completion.choices[0].message.content or "{}")
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("The plan could not be written.") from exc
+    plans = []
+    skipped = [item for item in payload.get("skipped") or [] if isinstance(item, str) and item.strip()]
+    for item in payload.get("workouts") or []:
+        stored = _stored_plan(item)
+        if stored is None:
+            label = str(item.get("title") or "Untitled").strip() or "Untitled"
+            skipped.append(f"{label} had no usable date.")
+            continue
+        plans.append(stored)
+    return plans[:120], skipped[:40], "generated"
 
 
 def workouts_from_program(

@@ -117,26 +117,19 @@ export async function loadAccountDashboard(supabase: SupabaseClient, day?: strin
   const { data: userData, error: userError } = await supabase.auth.getUser();
   if (!signedOut(userError)) raise(userError);
   const user = userData.user;
-  if (!user) {
-    return emptyDashboard({
-      display_name: "Coach Owen",
-      email: null,
-      timezone: DEFAULT_TIMEZONE,
-      email_notifications_enabled: false,
-      email_configured: false,
-    });
-  }
-
+  const profileRequest = user
+    ? supabase.from("profiles").select("display_name, email, timezone, email_notifications_enabled").eq("id", user.id).maybeSingle()
+    : Promise.resolve({ data: null, error: null });
   const [{ data: profile, error: profileError }, { data: athletes, error: athleteError }] = await Promise.all([
-    supabase.from("profiles").select("display_name, email, timezone, email_notifications_enabled").eq("id", user.id).maybeSingle(),
-    supabase.from("athletes").select("id, local_id, display_name, target_time").eq("coach_id", user.id).order("display_name"),
+    profileRequest,
+    supabase.rpc("roster_athletes"),
   ]);
   raise(profileError);
   raise(athleteError);
 
   const coach: CoachAccount = {
-    display_name: profile?.display_name || user.email?.split("@")[0] || "Coach Owen",
-    email: profile?.email ?? user.email ?? null,
+    display_name: profile?.display_name || user?.email?.split("@")[0] || "Coach Owen",
+    email: profile?.email ?? user?.email ?? null,
     timezone: profile?.timezone || DEFAULT_TIMEZONE,
     email_notifications_enabled: Boolean(profile?.email_notifications_enabled),
     email_configured: false,

@@ -630,7 +630,7 @@ export type ProgramImportResult = {
 
 export function importTrainingProgram(
   athleteId: number,
-  body: { filename: string; text?: string; content_base64?: string; start_date?: string },
+  body: { filename?: string; text?: string; content_base64?: string; start_date?: string; request?: string },
 ) {
   return request<ProgramImportResult>(`/api/athletes/${athleteId}/plan/program`, {
     method: "POST",

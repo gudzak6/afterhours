@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AthleteName, isTestAthlete } from "@/components/athlete-name";
 import { Button } from "@/components/ui/button";
@@ -12,8 +12,10 @@ export function PlanUpload() {
   const [athleteId, setAthleteId] = useState<number | null>(null);
   const [startDate, setStartDate] = useState(nextMonday);
   const [file, setFile] = useState<File | null>(null);
+  const [request, setRequest] = useState("");
   const [fileKey, setFileKey] = useState(0);
-  const [busy, setBusy] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState<"file" | "generate" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ProgramImportResult | null>(null);
 
@@ -36,7 +38,7 @@ export function PlanUpload() {
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     if (!athleteId || !file || busy) return;
-    setBusy(true);
+    setBusy("file");
     setError(null);
     setResult(null);
     try {
@@ -48,7 +50,24 @@ export function PlanUpload() {
     } catch (importError) {
       setError(errorMessage(importError));
     } finally {
-      setBusy(false);
+      setBusy(null);
+    }
+  }
+
+  async function onGenerate() {
+    const ask = request.trim();
+    if (!athleteId || !ask || busy) return;
+    setBusy("generate");
+    setError(null);
+    setResult(null);
+    try {
+      const imported = await importTrainingProgram(athleteId, { request: ask, start_date: startDate });
+      setResult(imported);
+      setRequest("");
+    } catch (generateError) {
+      setError(errorMessage(generateError));
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -92,20 +111,42 @@ export function PlanUpload() {
               />
             </label>
           </div>
-          <label className="block text-sm">
+          <div className="block text-sm">
             <span className="text-muted-foreground">Program file</span>
-            <input
-              key={fileKey}
-              type="file"
-              accept=".csv,.xlsx,.txt,.md,.text"
-              className="mt-1 block w-full text-sm"
-              disabled={busy}
-              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-            />
-          </label>
-          <Button type="submit" disabled={busy || !athleteId || !file}>
-            {busy ? "Reading the program…" : "Update plan"}
+            <div className="mt-1 flex flex-wrap items-center gap-3">
+              <input
+                ref={fileInput}
+                key={fileKey}
+                type="file"
+                accept=".csv,.xlsx,.txt,.md,.text"
+                className="sr-only"
+                disabled={busy}
+                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+              />
+              <Button type="button" variant="outline" disabled={busy} onClick={() => fileInput.current?.click()}>
+                Choose file
+              </Button>
+              <span className="text-muted-foreground">{file ? file.name : "No file chosen"}</span>
+            </div>
+          </div>
+          <Button type="submit" disabled={busy !== null || !athleteId || !file}>
+            {busy === "file" ? "Reading the program…" : "Update plan"}
           </Button>
+          <div className="space-y-2 border-t border-border pt-3">
+            <label className="block text-sm">
+              <span className="text-muted-foreground">Or ask for a plan</span>
+              <textarea
+                className="mt-1 min-h-20 w-full rounded-lg border border-input bg-card px-3 py-2"
+                value={request}
+                placeholder="I want a plan for training for the mile"
+                disabled={busy}
+                onChange={(event) => setRequest(event.target.value)}
+              />
+            </label>
+            <Button type="button" variant="outline" disabled={busy !== null || !athleteId || request.trim().length < 8} onClick={() => void onGenerate()}>
+              {busy === "generate" ? "Writing the plan…" : "Use AI to generate a plan"}
+            </Button>
+          </div>
         </form>
         {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
         {result && athlete ? (

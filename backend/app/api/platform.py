@@ -41,7 +41,7 @@ from app.coach.engine import present_report
 from app.services.brief import brief_for_day, deliver_daily_brief, generate_brief
 from app.services.efforts import running_stats
 from app.services.history import mileage_chart, weekly_mileage
-from app.services.program import next_monday, workouts_from_program
+from app.services.program import next_monday, workouts_from_program, workouts_from_request
 from app.services.mailer import smtp_configured
 from app.services.mileage import as_utc
 from app.services.roster import attention_reasons, training_status
@@ -93,10 +93,11 @@ class PlanImport(BaseModel):
 
 
 class ProgramImport(BaseModel):
-    filename: str
+    filename: str = "request.txt"
     text: str | None = None
     content_base64: str | None = None
     start_date: date | None = None
+    request: str | None = None
 
 
 class PlanMatch(BaseModel):
@@ -148,24 +149,42 @@ def _coach_payload(coach, settings: Settings) -> CoachOut:
     )
 
 
-def _plans_for_brief(db: Session, facts: list[dict], day: date) -> dict[int, list[dict]]:
+def _brief_plan(plan: ScheduledWorkout, *, include_date: bool) -> dict:
+    summary = _planned_summary(plan, None)
+    detail = summary["detail"]
+    if detail:
+        measured = [part for part in detail.split(" · ") if any(character.isdigit() for character in part)]
+        detail = " · ".join(measured) or None
+    shaped: dict = {"title": summary["title"], "detail": detail}
+    prescription = " ".join((plan.details or "").split())
+    if prescription:
+        shaped["prescription"] = prescription[:500]
+    if include_date:
+        shaped["scheduled_date"] = plan.scheduled_date.isoformat()
+    return shaped
+
+
+def _plans_for_brief(db: Session, facts: list[dict], day: date) -> tuple[dict[int, list[dict]], dict[int, list[dict]]]:
     athlete_ids = [int(item["athlete_id"]) for item in facts] or [0]
+    week_start = day - timedelta(days=(day.weekday() + 1) % 7)
+    week_end = week_start + timedelta(days=7)
     plans = list(
         db.scalars(
             select(ScheduledWorkout)
-            .where(ScheduledWorkout.athlete_id.in_(athlete_ids), ScheduledWorkout.scheduled_date == day)
-            .order_by(ScheduledWorkout.id)
+            .where(
+                ScheduledWorkout.athlete_id.in_(athlete_ids),
+                ScheduledWorkout.scheduled_date >= week_start,
+                ScheduledWorkout.scheduled_date < week_end,
+            )
+            .order_by(ScheduledWorkout.scheduled_date, ScheduledWorkout.id)
         ).all()
     )
-    grouped: dict[int, list[dict]] = {}
+    on_day: dict[int, list[dict]] = {}
+    surrounding: dict[int, list[dict]] = {}
     for plan in plans:
-        summary = _planned_summary(plan, None)
-        detail = summary["detail"]
-        if detail:
-            measured = [part for part in detail.split(" · ") if any(character.isdigit() for character in part)]
-            detail = " · ".join(measured) or None
-        grouped.setdefault(plan.athlete_id, []).append({"title": summary["title"], "detail": detail})
-    return grouped
+        target = on_day if plan.scheduled_date == day else surrounding
+        target.setdefault(plan.athlete_id, []).append(_brief_plan(plan, include_date=plan.scheduled_date != day))
+    return on_day, surrounding
 
 
 def _planned_summary(plan: ScheduledWorkout, athlete_name: str | None) -> dict:
@@ -317,6 +336,7 @@ def _roster(db: Session, settings: Settings) -> tuple[object, list[RosterAthlete
             {
                 "athlete_id": athlete.id,
                 "athlete_name": athlete.display_name,
+                "race_goal": None if goal is None else goal.primary_race_goal,
                 "ran_today": ran_today,
                 "training_status": status,
                 "attention_reasons": reasons,
@@ -461,9 +481,20 @@ def create_brief(
 ) -> dict:
     coach, _rows, facts = _roster(db, settings)
     selected = None if payload is None else payload.day
-    plans_by_athlete = {} if selected is None else _plans_for_brief(db, facts, selected)
+    plans_by_athlete: dict[int, list[dict]] = {}
+    surrounding_by_athlete: dict[int, list[dict]] = {}
+    if selected is not None:
+        plans_by_athlete, surrounding_by_athlete = _plans_for_brief(db, facts, selected)
     try:
-        brief = generate_brief(db, settings, coach, facts, day=selected, plans_by_athlete=plans_by_athlete)
+        brief = generate_brief(
+            db,
+            settings,
+            coach,
+            facts,
+            day=selected,
+            plans_by_athlete=plans_by_athlete,
+            surrounding_by_athlete=surrounding_by_athlete,
+        )
     except RuntimeError as exc:
         code = str(exc).split(":", 1)[0]
         status = 503 if code == "openai_not_configured" else 502
@@ -673,15 +704,28 @@ def import_program(
     coach = ensure_coach(db, settings)
     today = datetime.now(ZoneInfo(coach.timezone or "America/New_York")).date()
     start = payload.start_date or next_monday(today)
+    asked = (payload.request or "").strip()
     try:
-        plans, notes, source = workouts_from_program(
-            settings,
-            payload.filename,
-            payload.text,
-            payload.content_base64,
-            today=today,
-            start=start,
-        )
+        if asked:
+            goal = db.scalar(select(TrainingGoal).where(TrainingGoal.athlete_id == athlete.id))
+            plans, notes, source = workouts_from_request(
+                settings,
+                asked,
+                today=today,
+                start=start,
+                athlete_name=athlete.display_name,
+                race_goal=None if goal is None else goal.primary_race_goal,
+                target_time=athlete.target_time,
+            )
+        else:
+            plans, notes, source = workouts_from_program(
+                settings,
+                payload.filename,
+                payload.text,
+                payload.content_base64,
+                today=today,
+                start=start,
+            )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"code": "unreadable_plan", "message": str(exc)}) from exc
     except RuntimeError as exc:
@@ -695,7 +739,11 @@ def import_program(
     if not plans:
         raise HTTPException(
             status_code=422,
-            detail={"code": "empty_program", "message": "No dated workouts were found in that file.", "notes": notes},
+            detail={
+                "code": "empty_program",
+                "message": "No workouts were written from that request." if asked else "No dated workouts were found in that file.",
+                "notes": notes,
+            },
         )
     first = min(item["scheduled_date"] for item in plans)
     last = max(item["scheduled_date"] for item in plans)
