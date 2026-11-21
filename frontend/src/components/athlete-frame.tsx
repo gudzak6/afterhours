@@ -1,7 +1,8 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
-import { signedInAthleteId } from "@/lib/account";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import LoginPage from "@/app/login/page";
+import { hasAccount, signedInAthleteId } from "@/lib/account";
 import { AthleteName } from "@/components/athlete-name";
 import { GarminConnect } from "@/components/athlete-onboarding";
 import { errorMessage, getAthlete, getPortal, type PortalStatus } from "@/lib/api";
@@ -34,7 +35,7 @@ export function clearAthleteSession() {
 export function AthleteFrame({ children }: { children: React.ReactNode }) {
   const [athleteId, setAthleteId] = useState<number | null>(null);
   const [status, setStatus] = useState<PortalStatus | null>(null);
-  const [phase, setPhase] = useState<"loading" | "connect" | "app">("loading");
+  const [phase, setPhase] = useState<"loading" | "sign-in" | "connect" | "app">("loading");
   const [error, setError] = useState<string | null>(null);
 
   function remember(next: PortalStatus) {
@@ -51,33 +52,53 @@ export function AthleteFrame({ children }: { children: React.ReactNode }) {
     remember(await getPortal(athleteId));
   }
 
-  useEffect(() => {
+  const openSession = useCallback(async () => {
     const raw = window.sessionStorage.getItem(ID_KEY);
     const stored = raw ? Number(raw) : NaN;
-    void (async () => {
-      try {
-        const owned = await signedInAthleteId();
-        let id = owned ?? (Number.isFinite(stored) ? stored : (await getAthlete()).id);
-        let next: PortalStatus;
-        try {
-          next = await getPortal(id);
-        } catch (portalError) {
-          if (owned != null || !Number.isFinite(stored)) throw portalError;
-          window.sessionStorage.removeItem(ID_KEY);
-          id = (await getAthlete()).id;
-          next = await getPortal(id);
-        }
-        remember(next);
-      } catch (loadError: unknown) {
-        window.sessionStorage.removeItem(ID_KEY);
-        setError(errorMessage(loadError));
-        setPhase("connect");
+    try {
+      const signedIn = await hasAccount();
+      if (!signedIn) {
+        setPhase("sign-in");
+        return;
       }
-    })();
+      const owned = await signedInAthleteId();
+      let id = owned ?? (Number.isFinite(stored) ? stored : (await getAthlete()).id);
+      let next: PortalStatus;
+      try {
+        next = await getPortal(id);
+      } catch (portalError) {
+        if (owned != null || !Number.isFinite(stored)) throw portalError;
+        window.sessionStorage.removeItem(ID_KEY);
+        id = (await getAthlete()).id;
+        next = await getPortal(id);
+      }
+      remember(next);
+    } catch (loadError: unknown) {
+      window.sessionStorage.removeItem(ID_KEY);
+      setError(errorMessage(loadError));
+      setPhase("connect");
+    }
   }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void openSession();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [openSession]);
 
   if (phase === "loading") {
     return <p className="text-sm text-muted-foreground">Loading your training…</p>;
+  }
+  if (phase === "sign-in") {
+    return (
+      <LoginPage
+        onSignedIn={() => {
+          setPhase("loading");
+          return openSession();
+        }}
+      />
+    );
   }
   if (phase === "connect" && athleteId != null) {
     return (

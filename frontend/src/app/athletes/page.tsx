@@ -4,13 +4,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { AthleteName } from "@/components/athlete-name";
 import { Button } from "@/components/ui/button";
-import { hasAccount } from "@/lib/account";
 import { deleteAthlete, errorMessage, getDashboard, type CoachDashboard } from "@/lib/api";
 
 export default function AthletesPage() {
   const [dashboard, setDashboard] = useState<CoachDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [removingId, setRemovingId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
@@ -25,7 +23,6 @@ export default function AthletesPage() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void load();
-      void hasAccount().then(setSignedIn).catch(() => setSignedIn(false));
     }, 0);
     return () => window.clearTimeout(timer);
   }, [load]);
@@ -63,13 +60,7 @@ export default function AthletesPage() {
       {dashboard ? (
         dashboard.athletes.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            {signedIn === false ? (
-              <>
-                <Link href="/login" className="underline">Sign in</Link> to see athletes saved on your account.
-              </>
-            ) : (
-              "No athletes on the roster."
-            )}
+            No athletes on the roster.
           </p>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-border">

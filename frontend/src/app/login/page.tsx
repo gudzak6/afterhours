@@ -10,7 +10,7 @@ import { errorMessage } from "@/lib/api";
 
 const fieldClass = "mt-1 h-9 w-full rounded-lg border border-input bg-card px-3 text-sm";
 
-export default function LoginPage() {
+export default function LoginPage({ onSignedIn }: { onSignedIn?: () => void | Promise<void> }) {
   const router = useRouter();
   const [mode, setMode] = useState<"sign-in" | "create">("sign-in");
   const [name, setName] = useState("");
@@ -45,6 +45,10 @@ export default function LoginPage() {
         await signIn(email.trim(), password);
       }
       await prepareAccount();
+      if (onSignedIn) {
+        await onSignedIn();
+        return;
+      }
       router.push("/athlete");
       router.refresh();
     } catch (submitError) {
@@ -106,7 +110,7 @@ export default function LoginPage() {
             </button>
           </p>
           <p className="mt-2 text-sm">
-            <Link href="/athlete" className="underline">Back to your training</Link>
+            <Link href="/" className="underline">Coach view</Link>
           </p>
         </CardContent>
       </Card>

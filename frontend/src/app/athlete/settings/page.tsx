@@ -22,7 +22,7 @@ export default function AthleteSettingsPage() {
       </div>
       <div className="flex flex-wrap gap-3">
         <Link href="/login" className="inline-flex border border-foreground/30 bg-background px-3 py-2 text-[11px] tracking-[0.16em] uppercase">
-          {email ?? "Account"}
+          {email ?? "Sign in"}
         </Link>
         <Link href="/" className="inline-flex border border-foreground/30 bg-background px-3 py-2 text-[11px] tracking-[0.16em] uppercase">
           Coach
