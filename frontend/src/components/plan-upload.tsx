@@ -90,7 +90,7 @@ export function PlanUpload() {
                 className="mt-1 h-9 w-full rounded-lg border border-input bg-card px-3"
                 value={athleteId ?? ""}
                 onChange={(event) => setAthleteId(Number(event.target.value))}
-                disabled={busy || athletes.length === 0}
+                disabled={busy !== null || athletes.length === 0}
               >
                 {athletes.length === 0 ? <option value="">No athletes</option> : null}
                 {athletes.map((item) => (
@@ -107,7 +107,7 @@ export function PlanUpload() {
                 className="mt-1 h-9 w-full rounded-lg border border-input bg-card px-3"
                 value={startDate}
                 onChange={(event) => setStartDate(event.target.value)}
-                disabled={busy}
+                disabled={busy !== null}
               />
             </label>
           </div>
@@ -120,10 +120,10 @@ export function PlanUpload() {
                 type="file"
                 accept=".csv,.xlsx,.txt,.md,.text"
                 className="sr-only"
-                disabled={busy}
+                disabled={busy !== null}
                 onChange={(event) => setFile(event.target.files?.[0] ?? null)}
               />
-              <Button type="button" variant="outline" disabled={busy} onClick={() => fileInput.current?.click()}>
+              <Button type="button" variant="outline" disabled={busy !== null} onClick={() => fileInput.current?.click()}>
                 Choose file
               </Button>
               <span className="text-muted-foreground">{file ? file.name : "No file chosen"}</span>
@@ -139,7 +139,7 @@ export function PlanUpload() {
                 className="mt-1 min-h-20 w-full rounded-lg border border-input bg-card px-3 py-2"
                 value={request}
                 placeholder="I want a plan for training for the mile"
-                disabled={busy}
+                disabled={busy !== null}
                 onChange={(event) => setRequest(event.target.value)}
               />
             </label>
