@@ -148,6 +148,26 @@ def _coach_payload(coach, settings: Settings) -> CoachOut:
     )
 
 
+def _plans_for_brief(db: Session, facts: list[dict], day: date) -> dict[int, list[dict]]:
+    athlete_ids = [int(item["athlete_id"]) for item in facts] or [0]
+    plans = list(
+        db.scalars(
+            select(ScheduledWorkout)
+            .where(ScheduledWorkout.athlete_id.in_(athlete_ids), ScheduledWorkout.scheduled_date == day)
+            .order_by(ScheduledWorkout.id)
+        ).all()
+    )
+    grouped: dict[int, list[dict]] = {}
+    for plan in plans:
+        summary = _planned_summary(plan, None)
+        detail = summary["detail"]
+        if detail:
+            measured = [part for part in detail.split(" · ") if any(character.isdigit() for character in part)]
+            detail = " · ".join(measured) or None
+        grouped.setdefault(plan.athlete_id, []).append({"title": summary["title"], "detail": detail})
+    return grouped
+
+
 def _planned_summary(plan: ScheduledWorkout, athlete_name: str | None) -> dict:
     bits: list[str] = []
     if plan.workout_type:
@@ -440,8 +460,10 @@ def create_brief(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     coach, _rows, facts = _roster(db, settings)
+    selected = None if payload is None else payload.day
+    plans_by_athlete = {} if selected is None else _plans_for_brief(db, facts, selected)
     try:
-        brief = generate_brief(db, settings, coach, facts, day=None if payload is None else payload.day)
+        brief = generate_brief(db, settings, coach, facts, day=selected, plans_by_athlete=plans_by_athlete)
     except RuntimeError as exc:
         code = str(exc).split(":", 1)[0]
         status = 503 if code == "openai_not_configured" else 502

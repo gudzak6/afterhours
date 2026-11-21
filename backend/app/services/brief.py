@@ -27,6 +27,13 @@ daily_summary is the only text shown to the coach. Write it as one paragraph. In
 Prefer a short briefing over a list of every workout.
 athlete_id and athlete_name must be copied from the roster. Do not use a name that is not in the roster.
 The brief is for brief_date. Do not describe a different day as if it were brief_date.
+When day_relation is upcoming, brief_date has not happened. daily_summary is a preview of the plan, not a report of completed or missed work.
+Open with one sentence that names brief_date_label and says the day is still ahead. Do not print the numeric brief_date.
+Then put each athlete on a new line: the athlete name, then the workout in planned_for_brief_date, including the distance or other detail when it is present.
+If planned_for_brief_date is empty, say that athlete has no workout planned.
+Do not mention missed sessions, adherence, completions, follow-ups, heart rate, or an earlier run.
+Leave earlier_activity out. It did not happen on brief_date.
+requires_attention, positive_developments, and suggested_actions must be empty arrays when day_relation is upcoming.
 """
 
 BRIEF_SCHEMA = {
@@ -108,6 +115,49 @@ class CoachingBriefReport(BaseModel):
     suggested_actions: list[_Action]
 
 
+def day_relation(day: date, today: date) -> str:
+    if day > today:
+        return "upcoming"
+    if day < today:
+        return "past"
+    return "today"
+
+
+def prepare_brief_payload(
+    day: date,
+    today: date,
+    roster: list[dict],
+    plans_by_athlete: dict[int, list[dict]] | None = None,
+) -> dict:
+    """Shape the facts the brief is allowed to use for this calendar day."""
+    relation = day_relation(day, today)
+    planned = plans_by_athlete or {}
+    prepared: list[dict] = []
+    for item in roster:
+        athlete_id = int(item["athlete_id"])
+        sessions = planned.get(athlete_id, [])
+        if relation == "upcoming":
+            prepared.append(
+                {
+                    "athlete_id": athlete_id,
+                    "athlete_name": item.get("athlete_name"),
+                    "planned_for_brief_date": sessions,
+                    "earlier_activity": item.get("recent_activity"),
+                }
+            )
+            continue
+        copy = dict(item)
+        copy["planned_for_brief_date"] = sessions
+        prepared.append(copy)
+    return {
+        "brief_date": day.isoformat(),
+        "brief_date_label": f"{day.strftime('%A, %B')} {day.day}",
+        "day_relation": relation,
+        "today": today.isoformat(),
+        "roster": prepared,
+    }
+
+
 def validate_brief(payload: dict, allowed_ids: set[int]) -> dict:
     report = CoachingBriefReport.model_validate(payload)
     data = report.model_dump()
@@ -137,16 +187,20 @@ def generate_brief(
     roster: list[dict],
     *,
     day: date | None = None,
+    plans_by_athlete: dict[int, list[dict]] | None = None,
 ) -> CoachingBrief:
     from app.coach.engine import _client, _completion, openai_configured
 
     if not openai_configured(settings):
         raise RuntimeError("openai_not_configured")
     allowed = {int(item["athlete_id"]) for item in roster}
-    local_day = day or datetime.now(ZoneInfo(coach.timezone or "America/New_York")).date()
+    zone = ZoneInfo(coach.timezone or "America/New_York")
+    today = datetime.now(zone).date()
+    local_day = day or today
+    payload = prepare_brief_payload(local_day, today, roster, plans_by_athlete)
     messages = [
         {"role": "system", "content": BRIEF_PROMPT},
-        {"role": "user", "content": json.dumps({"brief_date": local_day.isoformat(), "roster": roster}, default=str)},
+        {"role": "user", "content": json.dumps(payload, default=str)},
     ]
     report = None
     error = "The model returned no brief."

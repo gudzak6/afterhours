@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.database import Base
 from app.models import Coach, CoachingBrief
-from app.services.brief import brief_for_day
+from app.services.brief import brief_for_day, prepare_brief_payload
 
 
 def test_friday_does_not_show_an_older_brief():
@@ -37,3 +37,26 @@ def test_friday_does_not_show_an_older_brief():
     stored = brief_for_day(session, coach, date(2026, 11, 11))
     assert stored is not None
     assert stored.report["daily_summary"].startswith("Athlete logged a run")
+
+
+def test_upcoming_brief_keeps_only_the_plan():
+    payload = prepare_brief_payload(
+        date(2026, 11, 23),
+        date(2026, 11, 21),
+        [
+            {
+                "athlete_id": 4,
+                "athlete_name": "Joey",
+                "attention_reasons": ["4 confirmed missed sessions"],
+                "recent_activity": "New York Running · 8.12 mi",
+                "stored_summary": "Controlled aerobic execution.",
+            }
+        ],
+        {4: [{"title": "Drills/hill strides", "detail": "5.00 mi"}]},
+    )
+    assert payload["day_relation"] == "upcoming"
+    athlete = payload["roster"][0]
+    assert athlete["planned_for_brief_date"] == [{"title": "Drills/hill strides", "detail": "5.00 mi"}]
+    assert "attention_reasons" not in athlete
+    assert "stored_summary" not in athlete
+    assert athlete["earlier_activity"] == "New York Running · 8.12 mi"

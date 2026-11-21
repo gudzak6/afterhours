@@ -129,9 +129,9 @@ function DayCard({
           <div className="min-w-0">
             <Link href={`/athletes/${row.athleteId}`} className="font-semibold hover:underline"><AthleteName name={row.athleteName} /></Link>
             <p className="text-sm text-muted-foreground">No run stored.</p>
+            <PlannedGhost athleteId={row.athleteId} planned={row.planned} />
           </div>
         </div>
-        <PlannedWork athleteId={row.athleteId} planned={row.planned} />
       </article>
     );
   }
@@ -156,13 +156,13 @@ function DayCard({
           <Footprints className="size-5 shrink-0" />
           <span className="text-2xl font-semibold tracking-tight">{activity.name || "Run"}</span>
         </Link>
+        <PlannedGhost athleteId={row.athleteId} planned={row.planned} />
       </div>
       <dl className="grid grid-cols-3 gap-3 px-4 py-4">
         <Stat label="Distance" value={miles == null ? "—" : `${miles.toFixed(2)} mi`} />
         <Stat label="Pace" value={paceLabel(activity.average_pace_seconds_per_mile)} />
         <Stat label="Time" value={durationLabel(activity.duration_seconds)} />
       </dl>
-      <PlannedWork athleteId={row.athleteId} planned={row.planned} />
       <div className="border-t border-border px-4 py-3">
         <Button type="button" size="sm" variant="outline" onClick={() => onAnalyze(activity)}>
           AI analysis
@@ -184,19 +184,22 @@ function AthleteMark({ name, athleteId }: { name: string; athleteId: number }) {
   );
 }
 
-function PlannedWork({ athleteId, planned }: { athleteId: number; planned: PlannedWorkout[] }) {
-  if (planned.length === 0) return null;
+function plannedLabel(plan: PlannedWorkout) {
+  const extras = (plan.detail ?? "").split(" · ").filter((part) => /\d/.test(part));
+  return [plan.title, ...extras].filter(Boolean).join(", ");
+}
+
+function PlannedGhost({ athleteId, planned }: { athleteId: number; planned: PlannedWorkout[] }) {
+  const className = "mt-1 text-xs text-muted-foreground/60";
+  if (planned.length === 0) return <p className={className}>No workout planned</p>;
   return (
-    <div className="space-y-1 px-4 pb-4 text-sm text-muted-foreground">
-      {planned.map((plan) => (
-        <p key={plan.id}>
-          <Link href={`/athletes/${athleteId}?section=plan`} className="font-medium text-foreground hover:underline">
-            {plan.title}
-          </Link>
-          {plan.detail ? <span> · {plan.detail}</span> : null}
-        </p>
-      ))}
-    </div>
+    <p className={className}>
+      Planned
+      {" · "}
+      <Link href={`/athletes/${athleteId}?section=plan`} className="hover:underline">
+        {planned.map(plannedLabel).join(" · ")}
+      </Link>
+    </p>
   );
 }
 
@@ -489,12 +492,6 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-heading text-4xl tracking-tight">Dashboard</h1>
-        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          Pick a day to see the planned workout and what each athlete ran.
-        </p>
-      </div>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {!dashboard && !error ? <p className="text-sm text-muted-foreground">Loading the roster…</p> : null}
 
@@ -524,12 +521,12 @@ export default function DashboardPage() {
                   <button
                     type="button"
                     className="rounded-full p-1 text-muted-foreground"
-                    aria-label="summary of athletes workouts for today"
+                    aria-label={selectedDay > dashboard.today ? "preview of the planned workouts for this day" : "summary of athletes workouts for today"}
                   >
                     <Info className="size-4" />
                   </button>
                   <p className="pointer-events-none absolute top-full left-0 z-10 mt-2 hidden w-52 border border-foreground/20 bg-background px-3 py-2 text-[11px] leading-snug text-foreground group-hover:block group-focus-within:block">
-                    summary of athletes workouts for today
+                    {selectedDay > dashboard.today ? "preview of the planned workouts for this day" : "summary of athletes workouts for today"}
                   </p>
                 </div>
               </div>
@@ -554,7 +551,12 @@ export default function DashboardPage() {
             <CardContent className="space-y-4">
               {notice ? <p className="text-sm">{notice}</p> : null}
               {dashboard.brief ? (
-                <p className="max-w-3xl text-sm leading-6">{dashboard.brief.daily_summary}</p>
+                <div className="space-y-2">
+                  {selectedDay > dashboard.today ? (
+                    <p className="text-xs tracking-[0.14em] text-muted-foreground uppercase">Preview · this day has not been run</p>
+                  ) : null}
+                  <p className="max-w-3xl text-sm leading-6 whitespace-pre-line">{dashboard.brief.daily_summary}</p>
+                </div>
               ) : (
                 <div className="space-y-3">
                   <p className="text-sm text-muted-foreground">
