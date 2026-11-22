@@ -121,7 +121,56 @@ function executiveAssessment(summary: string, athleteNames: string[]) {
   return { intro: intro.join(" "), bullets };
 }
 
+const PREVIEW_HEADINGS = [
+  "Workout Purpose",
+  "Athlete-Specific Rationale",
+  "Execution Guidance",
+  "Success Criteria",
+  "Coach Watchpoints",
+  "Training Context",
+];
+
+function firstSentence(text: string) {
+  const match = text.match(/^.*?[.!?](?:\s|$)/);
+  return (match ? match[0] : text).trim();
+}
+
+function shortenPreview(summary: string) {
+  if (!summary.includes("Workout Purpose:")) return null;
+  const notes: Array<{ name: string; purpose: string; watch: string }> = [];
+  let current: { name: string; purpose: string; watch: string } | null = null;
+  for (const chunk of summary.split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean)) {
+    const heading = PREVIEW_HEADINGS.find((label) => chunk.startsWith(`${label}:`));
+    if (!heading) {
+      if (!chunk.includes(":")) {
+        current = { name: chunk, purpose: "", watch: "" };
+        notes.push(current);
+      }
+      continue;
+    }
+    if (!current) continue;
+    const body = chunk.slice(heading.length + 1).trim();
+    if (heading === "Workout Purpose") current.purpose = firstSentence(body);
+    if (heading === "Coach Watchpoints") current.watch = firstSentence(body);
+  }
+  return notes.some((note) => note.purpose || note.watch) ? notes : null;
+}
+
 function BriefAssessment({ summary, athleteNames }: { summary: string; athleteNames: string[] }) {
+  const preview = shortenPreview(summary);
+  if (preview) {
+    return (
+      <ul className="max-w-3xl space-y-3 text-sm leading-6">
+        {preview.map((note) => (
+          <li key={note.name}>
+            <p className="font-medium">{note.name}</p>
+            {note.purpose ? <p>{note.purpose}</p> : null}
+            {note.watch ? <p className="text-muted-foreground">{note.watch}</p> : null}
+          </li>
+        ))}
+      </ul>
+    );
+  }
   const assessment = executiveAssessment(summary, athleteNames);
   if (!assessment) {
     return <p className="max-w-3xl text-sm leading-6 whitespace-pre-line">{summary}</p>;
