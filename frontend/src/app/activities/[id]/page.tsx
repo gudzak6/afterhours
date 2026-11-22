@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { AthleteName } from "@/components/athlete-name";
 import { CoachingReport } from "@/components/coaching-report";
 import { WorkoutBreakdown } from "@/components/workout-breakdown";
 import { Button } from "@/components/ui/button";
@@ -12,15 +13,18 @@ import { formatActivityType, formatDuration, formatHeartRate, formatMiles, forma
 
 export default function ActivityDetailPage() {
   const params = useParams<{ id: string }>();
+  const search = useSearchParams();
   const router = useRouter();
   const activityId = Number(params.id);
+  const ownerParam = Number(search.get("athlete"));
+  const ownerId = Number.isInteger(ownerParam) ? ownerParam : null;
   const [detail, setDetail] = useState<ActivityDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
 
   function load() {
-    return getActivity(activityId).then((row) => {
+    return getActivity(activityId, ownerId).then((row) => {
       setDetail(row);
       setError(null);
     });
@@ -34,7 +38,7 @@ export default function ActivityDetailPage() {
       void load().catch((loadError: unknown) => setError(errorMessage(loadError)));
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [activityId]);
+  }, [activityId, ownerId]);
 
   async function onDelete() {
     if (!detail) {
@@ -46,7 +50,7 @@ export default function ActivityDetailPage() {
     }
     setDeleting(true);
     try {
-      await deleteActivity(detail.activity.garmin_activity_id);
+      await deleteActivity(detail.activity.garmin_activity_id, detail.activity.athlete_id);
       router.push("/activities");
     } catch (deleteError) {
       setError(errorMessage(deleteError));
@@ -61,7 +65,7 @@ export default function ActivityDetailPage() {
     setBusy("report");
     setError(null);
     try {
-      await createReport(detail.activity.garmin_activity_id);
+      await createReport(detail.activity.garmin_activity_id, detail.activity.athlete_id ?? ownerId);
       await load();
     } catch (reportError) {
       setError(errorMessage(reportError));
@@ -98,6 +102,14 @@ export default function ActivityDetailPage() {
           </Link>
           <h1 className="font-heading mt-2 text-2xl tracking-tight sm:text-3xl">{activity.name || "Untitled activity"}</h1>
           <p className="mt-2 text-sm text-muted-foreground">
+            {activity.athlete_name ? (
+              <>
+                <Link href={`/athletes/${activity.athlete_id}`} className="hover:underline">
+                  <AthleteName name={activity.athlete_name} />
+                </Link>
+                {" · "}
+              </>
+            ) : null}
             {formatWhen(activity.start_time_local, activity.start_time_utc)} · {formatActivityType(activity.activity_type_key)}
           </p>
         </div>
@@ -106,23 +118,6 @@ export default function ActivityDetailPage() {
         </Button>
       </div>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Activity Analysis</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          <Button type="button" disabled={busy !== null} onClick={() => void onReport()}>
-            {busy === "report" ? "Writing…" : report ? "Write another report" : "Write report"}
-          </Button>
-          {report ? <CoachingReport report={report} /> : <p className="text-muted-foreground">No report stored.</p>}
-          <Link href={`/agent?activity=${activity.garmin_activity_id}`} className="underline">
-            Ask the agent about this activity
-          </Link>
-        </CardContent>
-      </Card>
-
-      <WorkoutBreakdown metrics={detail.metrics} />
 
       <Card>
         <CardHeader>
@@ -139,6 +134,23 @@ export default function ActivityDetailPage() {
           </dl>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Activity Analysis</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <Button type="button" disabled={busy !== null} onClick={() => void onReport()}>
+            {busy === "report" ? "Writing…" : report ? "Write another report" : "Write report"}
+          </Button>
+          {report ? <CoachingReport report={report} /> : <p className="text-muted-foreground">No report stored.</p>}
+          <Link href={`/agent?activity=${activity.garmin_activity_id}${activity.athlete_id == null ? "" : `&athlete=${activity.athlete_id}`}`} className="underline">
+            Ask the agent about this activity
+          </Link>
+        </CardContent>
+      </Card>
+
+      <WorkoutBreakdown metrics={detail.metrics} />
     </div>
   );
 }

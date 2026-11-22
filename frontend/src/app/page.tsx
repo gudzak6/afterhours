@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { mirrorRosterRuns } from "@/lib/account";
 import {
+  activityPath,
   createBrief,
   createReport,
   errorMessage,
@@ -249,7 +250,7 @@ function DayCard({
         </div>
       </div>
       <div className="px-4 pt-4">
-        <Link href={`/activities/${activity.garmin_activity_id}`} className="inline-flex items-center gap-2 hover:underline">
+        <Link href={activityPath(activity.garmin_activity_id, row.athleteId)} className="inline-flex items-center gap-2 hover:underline">
           <Footprints className="size-5 shrink-0" />
           <span className="text-lg font-semibold tracking-tight sm:text-xl">{activity.name || "Run"}</span>
         </Link>
@@ -322,7 +323,7 @@ function AnalysisModal({
   busy: boolean;
   error: string | null;
   onClose: () => void;
-  onRun: (garminActivityId: number) => void;
+  onRun: (garminActivityId: number, athleteId: number) => void;
 }) {
   useEffect(() => {
     if (!activity) return;
@@ -367,7 +368,7 @@ function AnalysisModal({
         </div>
         <div className="flex flex-col gap-2 border-t border-border px-5 py-4 sm:flex-row sm:justify-end">
           <Button type="button" variant="outline" className="h-11 w-full sm:h-8 sm:w-auto" onClick={onClose}>Close</Button>
-          <Button type="button" className="h-11 w-full sm:h-8 sm:w-auto" disabled={busy} onClick={() => onRun(activity.garmin_activity_id)}>
+          <Button type="button" className="h-11 w-full sm:h-8 sm:w-auto" disabled={busy} onClick={() => onRun(activity.garmin_activity_id, activity.athlete_id)}>
             {busy ? "Writing…" : activity.analysis_summary ? "Write again" : "Run analysis"}
           </Button>
         </div>
@@ -495,7 +496,7 @@ export default function DashboardPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [analyzingId, setAnalyzingId] = useState<number | null>(null);
-  const [analysisId, setAnalysisId] = useState<number | null>(null);
+  const [analysisId, setAnalysisId] = useState<{ garminActivityId: number; athleteId: number } | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [reloading, setReloading] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -581,11 +582,11 @@ export default function DashboardPage() {
     }
   }
 
-  async function runAnalysis(garminActivityId: number) {
+  async function runAnalysis(garminActivityId: number, athleteId: number) {
     setAnalyzingId(garminActivityId);
     setAnalysisError(null);
     try {
-      const result = await createReport(garminActivityId);
+      const result = await createReport(garminActivityId, athleteId);
       const summary = typeof result.report.summary === "string" ? result.report.summary : null;
       const kind = result.report.analysis_kind === "easy" ? "easy" : "workout";
       setDashboard((current) =>
@@ -593,7 +594,7 @@ export default function DashboardPage() {
           ? {
               ...current,
               recent_activities: current.recent_activities.map((activity) =>
-                activity.garmin_activity_id === garminActivityId
+                activity.garmin_activity_id === garminActivityId && activity.athlete_id === athleteId
                   ? { ...activity, analysis_summary: summary, analysis_kind: kind }
                   : activity,
               ),
@@ -644,20 +645,20 @@ export default function DashboardPage() {
                 row={row}
                 today={dashboard.today}
                 onAnalyze={(activity) => {
-                  setAnalysisId(activity.garmin_activity_id);
+                  setAnalysisId({ garminActivityId: activity.garmin_activity_id, athleteId: row.athleteId });
                   setAnalysisError(null);
-                  if (!activity.analysis_summary) void runAnalysis(activity.garmin_activity_id);
+                  if (!activity.analysis_summary) void runAnalysis(activity.garmin_activity_id, row.athleteId);
                 }}
               />
             ))}
             </div>
             <AnalysisModal
-              activity={dashboard.recent_activities.find((item) => item.garmin_activity_id === analysisId) ?? null}
-              athleteName={rowsForDay(dashboard, selectedDay).find((row) => row.activity?.garmin_activity_id === analysisId)?.athleteName ?? null}
-              busy={analyzingId !== null && analyzingId === analysisId}
+              activity={dashboard.recent_activities.find((item) => item.garmin_activity_id === analysisId?.garminActivityId && item.athlete_id === analysisId.athleteId) ?? null}
+              athleteName={rowsForDay(dashboard, selectedDay).find((row) => row.athleteId === analysisId?.athleteId && row.activity?.garmin_activity_id === analysisId.garminActivityId)?.athleteName ?? null}
+              busy={analyzingId !== null && analyzingId === analysisId?.garminActivityId}
               error={analysisError}
               onClose={() => setAnalysisId(null)}
-              onRun={(garminActivityId) => void runAnalysis(garminActivityId)}
+              onRun={(garminActivityId, athleteId) => void runAnalysis(garminActivityId, athleteId)}
             />
             </>
           )}

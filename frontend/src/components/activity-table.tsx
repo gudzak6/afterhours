@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { AthleteName } from "@/components/athlete-name";
 import { Badge } from "@/components/ui/badge";
-import type { Activity } from "@/lib/api";
+import { activityPath, type Activity } from "@/lib/api";
 import {
   formatActivityType,
   formatMiles,
@@ -25,8 +25,8 @@ export function ActivityTable({ activities }: { activities: Activity[] }) {
     <>
       <ul className="divide-y divide-border md:hidden">
         {activities.map((activity) => (
-          <li key={activity.garmin_activity_id} className="space-y-1 py-3">
-            <Link href={`/activities/${activity.garmin_activity_id}`} className="font-medium hover:underline">
+          <li key={`${activity.athlete_id ?? "athlete"}-${activity.garmin_activity_id}`} className="space-y-1 py-3">
+            <Link href={activityPath(activity.garmin_activity_id, activity.athlete_id)} className="font-medium hover:underline">
               {activity.name || "Untitled activity"}
             </Link>
             <p className="text-sm text-muted-foreground">
@@ -69,7 +69,7 @@ export function ActivityTable({ activities }: { activities: Activity[] }) {
         </thead>
         <tbody>
           {activities.map((activity) => (
-            <tr key={activity.garmin_activity_id} className="border-b border-border/70 last:border-0">
+            <tr key={`${activity.athlete_id ?? "athlete"}-${activity.garmin_activity_id}`} className="border-b border-border/70 last:border-0">
               <td className="px-3 py-3 whitespace-nowrap">
                 {formatWhen(activity.start_time_local, activity.start_time_utc)}
               </td>
@@ -83,7 +83,7 @@ export function ActivityTable({ activities }: { activities: Activity[] }) {
                 )}
               </td>
               <td className="px-3 py-3">
-                <Link href={`/activities/${activity.garmin_activity_id}`} className="font-medium hover:underline">
+                <Link href={activityPath(activity.garmin_activity_id, activity.athlete_id)} className="font-medium hover:underline">
                   {activity.name || "Untitled activity"}
                 </Link>
                 <div className="text-xs text-muted-foreground capitalize">

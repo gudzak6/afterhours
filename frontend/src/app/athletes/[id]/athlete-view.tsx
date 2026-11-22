@@ -12,6 +12,7 @@ import { AthleteName } from "@/components/athlete-name";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  activityPath,
   deleteAthlete,
   errorMessage,
   getActivities,
@@ -147,7 +148,7 @@ export default function AthletePage() {
                   <CardDescription>Every stored week, with this week filled in. Switch to the runs logged this week.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <MileageHistory chart={mileage} />
+                  <MileageHistory chart={mileage} athleteId={athleteId} />
                 </CardContent>
               </Card>
             ) : null}
@@ -162,7 +163,7 @@ export default function AthletePage() {
                   <ul className="space-y-2 text-sm">
                     {recent.map((workout) => (
                       <li key={workout.garmin_activity_id}>
-                        <Link href={`/activities/${workout.garmin_activity_id}`} className="font-medium hover:underline">
+                        <Link href={activityPath(workout.garmin_activity_id, athleteId)} className="font-medium hover:underline">
                           {workout.name || "Activity"}
                         </Link>
                         <span className="text-muted-foreground">
@@ -216,7 +217,7 @@ export default function AthletePage() {
               <ul className="divide-y divide-border text-sm">
                 {activities.map((activity) => (
                   <li key={activity.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between">
-                    <Link href={`/activities/${activity.garmin_activity_id}`} className="font-medium hover:underline">
+                    <Link href={activityPath(activity.garmin_activity_id, athleteId)} className="font-medium hover:underline">
                       {activity.name || "Activity"}
                     </Link>
                     <span className="text-muted-foreground">

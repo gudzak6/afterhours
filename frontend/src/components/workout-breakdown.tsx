@@ -70,15 +70,15 @@ export function WorkoutBreakdown({ metrics }: { metrics: Record<string, unknown>
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Workout reps</CardTitle>
+        <CardTitle>{mileSplits ? "Miles" : "Workout reps"}</CardTitle>
         <CardDescription>
           {mileSplits
-            ? "Each row is one mile of the run."
+            ? "Each row is one mile of the run. The watch split these automatically."
             : "Each pace is the fast portion of that rep. A mile auto-lap does not split a rep that stays fast."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
-        <p className="font-heading text-2xl tracking-tight">{breakdown.label}</p>
+        {mileSplits ? null : <p className="font-heading text-2xl tracking-tight">{breakdown.label}</p>}
         {context.length > 0 ? <p className="text-sm text-muted-foreground">{context.join(" · ")}</p> : null}
         <div className="space-y-5">
           {breakdown.groups.map((group, groupIndex) => (

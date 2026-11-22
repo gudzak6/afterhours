@@ -361,29 +361,47 @@ def list_activities(
     )
 
 
-def _load_activity(db: Session, athlete: Athlete, activity_id: int) -> Activity:
+def _load_activity(db: Session, athlete: Athlete, activity_id: int, owner_id: int | None = None) -> Activity:
     owned_ids = [athlete.id]
     if athlete.coach_id is not None:
         owned_ids = list(db.scalars(select(Athlete.id).where(Athlete.coach_id == athlete.coach_id)).all())
-    activity = db.scalar(
-        select(Activity).where(
-            Activity.athlete_id.in_(owned_ids or [0]),
-            Activity.garmin_activity_id == activity_id,
-        )
+    if owner_id is not None:
+        if owner_id not in owned_ids:
+            raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Activity not found"})
+        owned_ids = [owner_id]
+    rows = list(
+        db.scalars(
+            select(Activity)
+            .where(
+                Activity.athlete_id.in_(owned_ids or [0]),
+                Activity.garmin_activity_id == activity_id,
+            )
+            .order_by(Activity.athlete_id)
+        ).all()
     )
-    if activity is None:
+    if not rows:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Activity not found"})
-    return activity
+    if owner_id is None and len(rows) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "ambiguous_activity",
+                "message": "This activity is stored for more than one athlete. Open it from that athlete.",
+            },
+        )
+    return rows[0]
 
 
 @router.get("/api/activities/{activity_id}", response_model=ActivityDetailOut)
 def get_activity(
     activity_id: int,
+    athlete_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> ActivityDetailOut:
     athlete = ensure_athlete(db, settings)
-    activity = _load_activity(db, athlete, activity_id)
+    activity = _load_activity(db, athlete, activity_id, athlete_id)
+    owner = db.get(Athlete, activity.athlete_id)
     laps = db.scalars(
         select(ActivityLap).where(ActivityLap.activity_id == activity.id).order_by(ActivityLap.lap_number)
     ).all()
@@ -450,6 +468,7 @@ def get_activity(
             include_location=True,
             classification=classification,
             analysis_status="not_started" if analysis is None else analysis.status,
+            athlete_name=None if owner is None else owner.display_name,
         ),
         laps=[
             LapOut(
@@ -507,11 +526,12 @@ def get_activity(
 @router.delete("/api/activities/{activity_id}", status_code=204)
 def delete_activity(
     activity_id: int,
+    athlete_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> None:
     athlete = ensure_athlete(db, settings)
-    activity = _load_activity(db, athlete, activity_id)
+    activity = _load_activity(db, athlete, activity_id, athlete_id)
     conversation_ids = list(
         db.scalars(select(AiConversation.id).where(AiConversation.activity_id == activity.id)).all()
     )
@@ -588,11 +608,12 @@ def files_status(db: Session = Depends(get_db), settings: Settings = Depends(get
 @router.post("/api/activities/{activity_id}/file")
 def download_activity_file(
     activity_id: int,
+    athlete_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict:
     athlete = ensure_athlete(db, settings)
-    activity = _load_activity(db, athlete, activity_id)
+    activity = _load_activity(db, athlete, activity_id, athlete_id)
     result = import_one(db, settings, activity)
     if result == "already_running":
         raise HTTPException(
@@ -607,11 +628,12 @@ def download_activity_file(
 def update_classification(
     activity_id: int,
     body: ClassificationUpdate,
+    athlete_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> ClassificationOut:
     athlete = ensure_athlete(db, settings)
-    activity = _load_activity(db, athlete, activity_id)
+    activity = _load_activity(db, athlete, activity_id, athlete_id)
     row = db.scalar(select(WorkoutClassification).where(WorkoutClassification.activity_id == activity.id))
     now = datetime.now(UTC)
     if row is None:
@@ -648,11 +670,12 @@ def update_classification(
 @router.post("/api/activities/{activity_id}/report")
 def create_report(
     activity_id: int,
+    athlete_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict:
     athlete = ensure_athlete(db, settings)
-    activity = _load_activity(db, athlete, activity_id)
+    activity = _load_activity(db, athlete, activity_id, athlete_id)
     if not openai_configured(settings):
         raise HTTPException(
             status_code=503,
@@ -698,6 +721,7 @@ def coach_chat(
             message=body.message,
             conversation_id=body.conversation_id,
             garmin_activity_id=body.garmin_activity_id,
+            athlete_id=body.athlete_id,
             athletes=roster,
         )
     except Exception as exc:

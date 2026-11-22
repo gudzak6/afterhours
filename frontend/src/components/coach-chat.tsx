@@ -17,6 +17,8 @@ export function CoachChat() {
   const params = useSearchParams();
   const activityParam = params.get("activity");
   const activityId = activityParam ? Number(activityParam) : null;
+  const athleteParam = params.get("athlete");
+  const athleteId = athleteParam ? Number(athleteParam) : null;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
@@ -38,6 +40,7 @@ export function CoachChat() {
         message,
         conversationId,
         activityId != null && Number.isInteger(activityId) ? activityId : null,
+        athleteId != null && Number.isInteger(athleteId) ? athleteId : null,
       );
       setConversationId(response.conversation_id);
       setMessages(response.messages);

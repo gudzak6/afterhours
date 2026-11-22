@@ -45,7 +45,7 @@ function runTick(local: string | null): string {
   return time ? `${day} ${time}` : `${day} ${date.getDate()}`;
 }
 
-export function MileageHistory({ chart }: { chart: MileageChart }) {
+export function MileageHistory({ chart, athleteId }: { chart: MileageChart; athleteId?: number | null }) {
   const router = useRouter();
   const [view, setView] = useState<"weeks" | "runs">("weeks");
   const weekPoints = chart.weeks.map((week, index) => ({
@@ -142,7 +142,7 @@ export function MileageHistory({ chart }: { chart: MileageChart }) {
                 cursor={view === "runs" ? "pointer" : undefined}
                 onClick={(point) => {
                   const id = (point as { garminId?: number | null }).garminId;
-                  if (id) router.push(`/activities/${id}`);
+                  if (id) router.push(athleteId == null ? `/activities/${id}` : `/activities/${id}?athlete=${athleteId}`);
                 }}
               >
                 {points.map((point, index) => (

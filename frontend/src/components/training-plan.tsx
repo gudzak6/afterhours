@@ -254,7 +254,7 @@ export function TrainingPlan({ athleteId }: { athleteId: number }) {
             {workout.match ? (
               <p className="mt-1 text-muted-foreground">
                 Matched {workout.match.source}: {" "}
-                <Link href={`/activities/${workout.match.garmin_activity_id}`} className="hover:underline">{workout.match.name || "Activity"}</Link>
+                <Link href={`/activities/${workout.match.garmin_activity_id}?athlete=${athleteId}`} className="hover:underline">{workout.match.name || "Activity"}</Link>
               </p>
             ) : null}
             <div className="mt-2 flex flex-wrap items-center gap-2">

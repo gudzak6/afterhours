@@ -349,13 +349,28 @@ def _pick_athlete(athletes: list[Athlete], arguments: dict) -> Athlete | dict:
     return {"error": "Name the athlete. The roster has more than one.", "athletes": [athlete.display_name for athlete in athletes]}
 
 
-def _find_roster_activity(session: Session, athletes: list[Athlete], garmin_activity_id: int) -> Activity | None:
-    return session.scalar(
-        select(Activity).where(
-            Activity.athlete_id.in_(_roster_ids(athletes)),
-            Activity.garmin_activity_id == garmin_activity_id,
-        )
+def _find_roster_activity(
+    session: Session,
+    athletes: list[Athlete],
+    garmin_activity_id: int,
+    athlete_id: int | None = None,
+) -> Activity | None:
+    ids = _roster_ids(athletes)
+    if athlete_id is not None:
+        if athlete_id not in ids:
+            return None
+        ids = [athlete_id]
+    rows = list(
+        session.scalars(
+            select(Activity).where(
+                Activity.athlete_id.in_(ids),
+                Activity.garmin_activity_id == garmin_activity_id,
+            )
+        ).all()
     )
+    if athlete_id is None and len(rows) != 1:
+        return None
+    return rows[0] if rows else None
 
 
 def _owner(athletes: list[Athlete], activity: Activity) -> Athlete | None:
@@ -981,6 +996,7 @@ def chat(
     message: str,
     conversation_id: int | None,
     garmin_activity_id: int | None,
+    athlete_id: int | None = None,
     athletes: list[Athlete] | None = None,
     audience: str = "coach",
 ) -> tuple[AiConversation, list[AiMessage]]:
@@ -998,7 +1014,7 @@ def chat(
         )
     activity = None
     if garmin_activity_id is not None:
-        activity = _find_roster_activity(session, roster, garmin_activity_id)
+        activity = _find_roster_activity(session, roster, garmin_activity_id, athlete_id)
     if conversation is None:
         conversation = AiConversation(
             athlete_id=athlete.id,

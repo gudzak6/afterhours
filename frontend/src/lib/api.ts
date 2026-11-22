@@ -316,12 +316,20 @@ export async function getActivities(limit = 100) {
   }
 }
 
-export function getActivity(activityId: number) {
-  return request<ActivityDetail>(`/api/activities/${activityId}`);
+export function activityPath(garminActivityId: number, athleteId?: number | null) {
+  return athleteId == null ? `/activities/${garminActivityId}` : `/activities/${garminActivityId}?athlete=${athleteId}`;
 }
 
-export function deleteActivity(activityId: number) {
-  return request<void>(`/api/activities/${activityId}`, { method: "DELETE" });
+function activityQuery(athleteId?: number | null) {
+  return athleteId == null ? "" : `?athlete_id=${athleteId}`;
+}
+
+export function getActivity(activityId: number, athleteId?: number | null) {
+  return request<ActivityDetail>(`/api/activities/${activityId}${activityQuery(athleteId)}`);
+}
+
+export function deleteActivity(activityId: number, athleteId?: number | null) {
+  return request<void>(`/api/activities/${activityId}${activityQuery(athleteId)}`, { method: "DELETE" });
 }
 
 export function getSummary() {
@@ -351,34 +359,35 @@ export function startFileImport() {
   return request<FileImportStatus>("/api/garmin/files", { method: "POST", body: "{}" });
 }
 
-export function importActivityFile(activityId: number) {
-  return request<{ import_status: string }>(`/api/activities/${activityId}/file`, {
+export function importActivityFile(activityId: number, athleteId?: number | null) {
+  return request<{ import_status: string }>(`/api/activities/${activityId}/file${activityQuery(athleteId)}`, {
     method: "POST",
     body: "{}",
   });
 }
 
-export function updateClassification(activityId: number, workoutType: string) {
-  return request<Classification>(`/api/activities/${activityId}/classification`, {
+export function updateClassification(activityId: number, workoutType: string, athleteId?: number | null) {
+  return request<Classification>(`/api/activities/${activityId}/classification${activityQuery(athleteId)}`, {
     method: "PATCH",
     body: JSON.stringify({ workout_type: workoutType }),
   });
 }
 
-export function createReport(activityId: number) {
+export function createReport(activityId: number, athleteId?: number | null) {
   return request<{ status: string; model: string | null; report: Record<string, unknown> }>(
-    `/api/activities/${activityId}/report`,
+    `/api/activities/${activityId}/report${activityQuery(athleteId)}`,
     { method: "POST", body: "{}" },
   );
 }
 
-export function sendChat(message: string, conversationId: number | null, garminActivityId: number | null) {
+export function sendChat(message: string, conversationId: number | null, garminActivityId: number | null, athleteId?: number | null) {
   return request<{ conversation_id: number; messages: ChatMessage[] }>("/api/coach/chat", {
     method: "POST",
     body: JSON.stringify({
       message,
       conversation_id: conversationId,
       garmin_activity_id: garminActivityId,
+      athlete_id: athleteId ?? null,
     }),
   });
 }
