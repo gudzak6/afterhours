@@ -81,6 +81,7 @@ def extract_lap(frame, lap_number: int) -> dict:
     cadence, cadence_field = _first_number(frame, ("avg_running_cadence", "avg_cadence", "cadence"))
     ascent, ascent_field = _first_number(frame, ("total_ascent",))
     descent, descent_field = _first_number(frame, ("total_descent",))
+    power, power_field = _first_number(frame, ("avg_power",))
     start = _as_utc(_raw(frame, "start_time")[0] if _raw(frame, "start_time")[1] else None)
     stamp_value, stamp_present = _raw(frame, "timestamp")
     stamp = _as_utc(stamp_value if isinstance(stamp_value, datetime) else None)
@@ -96,6 +97,7 @@ def extract_lap(frame, lap_number: int) -> dict:
             ("average_cadence", cadence_field),
             ("ascent_meters", ascent_field),
             ("descent_meters", descent_field),
+            ("average_power_watts", power_field),
         )
         if flag
     ]
@@ -120,6 +122,7 @@ def extract_lap(frame, lap_number: int) -> dict:
         "cadence_field": cadence_field,
         "ascent_meters": ascent,
         "descent_meters": descent,
+        "average_power_watts": power,
         "start_time_utc": start,
         "end_time_utc": _end_time(start, stamp, elapsed),
         "intensity": intensity,
@@ -138,6 +141,7 @@ def extract_record(frame, origin: datetime | None) -> dict:
     cadence, cadence_field = _first_number(frame, ("cadence",))
     fractional, fractional_field = _first_number(frame, ("fractional_cadence",))
     altitude, altitude_field = _first_number(frame, ("enhanced_altitude", "altitude"))
+    power, power_field = _first_number(frame, ("power",))
     lat_raw, lat_present = _raw(frame, "position_lat")
     lon_raw, lon_present = _raw(frame, "position_long")
     latitude = semicircles_to_degrees(lat_raw) if lat_present else None
@@ -156,6 +160,7 @@ def extract_record(frame, origin: datetime | None) -> dict:
             ("heart_rate_bpm", heart_field),
             ("cadence", cadence_field or fractional_field),
             ("altitude_meters", altitude_field),
+            ("power_watts", power_field),
             ("latitude", lat_present and latitude is not None),
             ("longitude", lon_present and longitude is not None),
         )
@@ -169,9 +174,21 @@ def extract_record(frame, origin: datetime | None) -> dict:
         "heart_rate_bpm": heart,
         "cadence": cadence_value,
         "altitude_meters": altitude,
+        "power_watts": power,
         "latitude": latitude,
         "longitude": longitude,
         "present_fields": present,
+    }
+
+
+def extract_event(frame) -> dict:
+    stamp_value, _present = _raw(frame, "timestamp")
+    stamp = _as_utc(stamp_value if isinstance(stamp_value, datetime) else None)
+    return {
+        "timestamp": stamp,
+        "event": _text(frame, "event"),
+        "event_type": _text(frame, "event_type"),
+        "timer_trigger": _text(frame, "timer_trigger"),
     }
 
 
@@ -242,6 +259,7 @@ def parse_fit(payload: bytes) -> dict:
     laps = []
     records = []
     steps = []
+    events = []
     origin = None
     with fitdecode.FitReader(io.BytesIO(payload)) as reader:
         for frame in reader:
@@ -256,6 +274,8 @@ def parse_fit(payload: bytes) -> dict:
                 records.append(extract_record(frame, origin))
             elif frame.name == "workout_step":
                 steps.append(extract_step(frame, len(steps) + 1))
+            elif frame.name == "event":
+                events.append(extract_event(frame))
     if origin is None:
         for record in records:
             if record["sample_time_utc"] is not None:
@@ -270,5 +290,6 @@ def parse_fit(payload: bytes) -> dict:
         "laps": laps,
         "records": records,
         "steps": steps,
+        "events": events,
         "workout_steps_found": bool(steps),
     }

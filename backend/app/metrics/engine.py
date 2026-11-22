@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 
 from app.metrics.elevation import elevation_effect
+from app.workouts.detect import detect_workout
 from app.workouts.structure import describe_workout
 
 METERS_PER_MILE = 1609.344
@@ -178,6 +179,11 @@ def activity_metrics(
     heart_rate_zones: list[dict] | None = None,
     elevation_gain_meters: float | None = None,
     elevation_loss_meters: float | None = None,
+    steps: list[dict] | None = None,
+    timer_events: list[dict] | None = None,
+    fit_session: dict | None = None,
+    plan: dict | None = None,
+    lt2_pace_seconds_per_mile: float | None = None,
 ) -> dict:
     evidence = {} if not classification else classification.get("evidence") or {}
     stride_laps = list(evidence.get("stride_laps") or evidence.get("work_laps") or [])
@@ -209,6 +215,15 @@ def activity_metrics(
         ),
         "zones_configured": bool(pace_zones or heart_rate_zones),
         "workout_breakdown": describe_workout(laps, samples),
+        "workout_intelligence": detect_workout(
+            laps,
+            samples,
+            steps=steps,
+            timer_events=timer_events,
+            session=fit_session,
+            plan=plan,
+            lt2_pace_seconds_per_mile=lt2_pace_seconds_per_mile,
+        ),
         "elevation_effect": elevation_effect(
             samples,
             gain_meters=elevation_gain_meters,

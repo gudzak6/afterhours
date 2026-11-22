@@ -19,6 +19,7 @@ from app.models import (
     Activity,
     ActivityLap,
     ActivitySample,
+    ActivityWorkoutStep,
     AiConversation,
     AiMessage,
     Athlete,
@@ -74,7 +75,9 @@ Mention another day, such as yesterday or tomorrow, only when that workout appea
 On a workout, when metrics.workout_breakdown.label is present, that label and each repetition's pace were already calculated from the recording. Describe the session as that structure and quote those paces. Do not average different repetition distances into one pace, and do not describe a different session. metrics.repetitions can split one repetition across an automatic lap, so it is not the workout structure. On an easy or recovery run, do not describe a repetition workout. If mile laps are stored, summarize them as a pace range in one sentence. Do not list every mile.
 On a workout, when metrics.elevation_effect.available is true, quote the elevation note. Do not recompute grade and do not invent a hill. If a slower mile or repetition lines up with a calculated climb, say so. If elevation_effect.available is false, leave elevation out. On an easy or recovery run, leave the elevation note out.
 Heart rate on repetitions shorter than 30 seconds is not evidence of how hard the effort was.
-Phrase activity_classification from the stored workout type, using labels such as Easy Run, Recovery, Interval Training, Threshold, Long Run, Strides, Tempo, or Progression. Do not contradict the stored classification.
+metrics.workout_intelligence is calculated before this report. classification.workout_type is the detected structure. observed holds measurements. Do not treat plan_context as proof of what was run. Do not invent repetitions when classification.workout_type is unknown or classification.ambiguous is true. Say which fields are missing.
+When classification.confidence is at least 0.6, phrase activity_classification from that detected type: Easy Run, Recovery, Intervals, Threshold, Long Run, Strides, Hill Sprints, Tempo, or Progression. A stored workout type that disagrees with a confident detection is the older label. Use the detection.
+When confidence is below 0.6, activity_classification is Unknown and the report says the recording does not identify the workout.
 Set effort_level to Easy, Moderate, or Hard Effort from the recorded pace, heart rate, and workout structure. If that evidence is thin, choose the closest level.
 athlete_profile, comparable_activities, and recent_training are saved profile fields or measurements. Refer to a race goal, an earlier performance, or a lactate threshold only when that field is present.
 When athlete_profile.intake is present, quote a race time only when that race is listed.
@@ -83,12 +86,16 @@ Set goal_progress_status to on_track, building, or needs_attention only when the
 Nothing in this report changes the training plan. Tell the coach what to review. Do not tell the athlete what to do.
 How a run felt is the athlete's sensation, not a command. Write "Check that easy running still feels normal before keeping the faster work." Do not write "Keep easy running feeling normal."
 
+recent_training includes the last 7 and 14 days. athlete_profile.training_phase is null when no phase is stored. Do not invent a phase, a fatigue score, or a fitness change.
 Write:
-- summary: one paragraph of 3 to 5 sentences for the coach. Name the athlete. Include distance, average pace, how it compared with the stored plan when one is present, heart rate when it is stored, and the pace range when laps are stored.
-- training_impact: one paragraph of 2 to 3 sentences on what this recorded session does for this athlete, such as recovery, aerobic volume, or the quality the workout was for.
-- fitness_indicators: one sentence on what the recording can and cannot tell the coach about fitness.
+- workout_identification: what was detected, the confidence, the repetition count when present, and the limitation when the structure is unknown.
+- execution_analysis: repetition consistency, intensity, recovery, and how that compares with plan_context when a plan is present. If there is no plan, do not mention one.
+- summary: one paragraph of 3 to 5 sentences for the coach. Name the athlete. Include the detected structure when confidence is at least 0.6, distance, and heart rate only when heart_rate_usable is true or the effort is longer than 30 seconds.
+- training_impact: one paragraph of 2 to 3 sentences on the stimulus this recording supports for this athlete. Do not invent a physiological adaptation the data cannot show.
+- fitness_indicators: one sentence comparing a measured effort with comparable_activities when those share a structure. If they do not, say the recording cannot support a fitness conclusion.
 - what_went_well: 2 to 3 sentences about one recorded strength, each tied to a number in the context. State the observation. Do not praise the athlete in the second person.
-- where_to_focus: 2 to 3 sentences telling the coach what to check or decide, each tied to a number in the context. If nothing is off, say what the coach should confirm before the next stored session.
+- where_to_focus: 2 to 3 sentences on execution problems, fatigue signals, or missing evidence. If nothing is off, say what the coach should confirm.
+- coach_takeaway: two to four sentences on what matters and what the coach should consider next. Do not change the plan.
 - goal_progress: one sentence for the coach. If the goal or the comparable evidence is missing, say so.
 """
 
@@ -98,11 +105,14 @@ REPORT_JSON_SCHEMA = {
     "properties": {
         "activity_classification": {"type": "string"},
         "effort_level": {"type": "string", "enum": ["Easy", "Moderate", "Hard Effort"]},
+        "workout_identification": {"type": "string"},
+        "execution_analysis": {"type": "string"},
         "summary": {"type": "string"},
         "training_impact": {"type": "string"},
         "fitness_indicators": {"type": "string"},
         "what_went_well": {"type": "array", "items": {"type": "string"}},
         "where_to_focus": {"type": "array", "items": {"type": "string"}},
+        "coach_takeaway": {"type": "string"},
         "goal_progress_status": {
             "type": "string",
             "enum": ["on_track", "building", "needs_attention", "insufficient_evidence"],
@@ -113,11 +123,14 @@ REPORT_JSON_SCHEMA = {
     "required": [
         "activity_classification",
         "effort_level",
+        "workout_identification",
+        "execution_analysis",
         "summary",
         "training_impact",
         "fitness_indicators",
         "what_went_well",
         "where_to_focus",
+        "coach_takeaway",
         "goal_progress_status",
         "goal_progress",
         "missing_information",
@@ -146,11 +159,14 @@ class WorkoutReport(BaseModel):
 
     activity_classification: str
     effort_level: Literal["Easy", "Moderate", "Hard Effort"]
+    workout_identification: str = ""
+    execution_analysis: str = ""
     summary: str
     training_impact: str
     fitness_indicators: str
     what_went_well: list[str]
     where_to_focus: list[str]
+    coach_takeaway: str = ""
     goal_progress_status: Literal["on_track", "building", "needs_attention", "insufficient_evidence"]
     goal_progress: str
     missing_information: list[str]
@@ -180,7 +196,7 @@ def validate_report(payload: dict) -> dict:
 
 
 EASY_SESSION_TYPES = {"easy", "recovery"}
-WORKOUT_SESSION_TYPES = {"intervals", "threshold", "tempo", "marathon_pace", "strides", "progression", "race", "long_run"}
+WORKOUT_SESSION_TYPES = {"intervals", "threshold", "tempo", "marathon_pace", "strides", "hill_sprints", "progression", "race", "long_run"}
 
 
 def session_kind(workout_type: str | None, report: dict | None = None) -> str:
@@ -232,6 +248,11 @@ def _lap_payload(lap: ActivityLap) -> dict:
         "cadence_field": raw.get("cadence_field"),
         "intensity": raw.get("intensity"),
         "lap_trigger": raw.get("lap_trigger"),
+        "elapsed_seconds": raw.get("elapsed_seconds"),
+        "ascent_meters": raw.get("ascent_meters"),
+        "descent_meters": raw.get("descent_meters"),
+        "average_power_watts": raw.get("average_power_watts"),
+        "average_cadence": lap.average_cadence_spm,
     }
 
 
@@ -260,7 +281,7 @@ def _zones(athlete: Athlete) -> tuple[list | None, list | None]:
     return pace, heart
 
 
-def build_metrics(session: Session, athlete: Athlete, activity: Activity) -> dict:
+def build_metrics(session: Session, athlete: Athlete, activity: Activity, *, plan: dict | None = None) -> dict:
     laps = session.scalars(
         select(ActivityLap).where(ActivityLap.activity_id == activity.id).order_by(ActivityLap.lap_number)
     ).all()
@@ -273,6 +294,18 @@ def build_metrics(session: Session, athlete: Athlete, activity: Activity) -> dic
         select(WorkoutClassification).where(WorkoutClassification.activity_id == activity.id)
     )
     pace_zones, heart_zones = _zones(athlete)
+    steps = session.scalars(
+        select(ActivityWorkoutStep)
+        .where(ActivityWorkoutStep.activity_id == activity.id)
+        .order_by(ActivityWorkoutStep.step_index)
+    ).all()
+    lt2 = session.scalar(
+        select(AthleteThreshold).where(
+            AthleteThreshold.athlete_id == athlete.id,
+            AthleteThreshold.name == "lt2",
+        )
+    )
+    fit_summary = activity.fit_summary if isinstance(activity.fit_summary, dict) else {}
     metrics = activity_metrics(
         [_lap_payload(lap) for lap in laps],
         [
@@ -281,7 +314,9 @@ def build_metrics(session: Session, athlete: Athlete, activity: Activity) -> dic
                 "distance_meters": sample.distance_meters,
                 "speed_mps": sample.speed_mps,
                 "heart_rate_bpm": sample.heart_rate_bpm,
+                "cadence_spm": sample.cadence_spm,
                 "altitude_meters": sample.altitude_meters,
+                "power_watts": sample.power_watts,
             }
             for sample in samples
         ],
@@ -292,6 +327,18 @@ def build_metrics(session: Session, athlete: Athlete, activity: Activity) -> dic
         heart_rate_zones=heart_zones,
         elevation_gain_meters=activity.elevation_gain_meters,
         elevation_loss_meters=activity.elevation_loss_meters,
+        steps=[
+            {
+                "intensity": step.intensity,
+                "duration_seconds": step.duration_seconds,
+                "distance_meters": step.distance_meters,
+            }
+            for step in steps
+        ],
+        timer_events=list(fit_summary.get("timer_events") or []),
+        fit_session=fit_summary,
+        plan=plan,
+        lt2_pace_seconds_per_mile=None if lt2 is None else lt2.pace_seconds_per_mile,
     )
     return {
         "activity": _activity_brief(activity, classification),
@@ -787,11 +834,13 @@ def _intake_for_report(athlete: Athlete) -> dict | None:
 
 
 def build_report_context(session: Session, athlete: Athlete, activity: Activity) -> dict:
-    current = build_metrics(session, athlete, activity)
+    planned = _planned_vs_actual(session, athlete, activity)
+    current = build_metrics(session, athlete, activity, plan=planned)
     workout_type = current["activity"].get("workout_type")
     activities = list(session.scalars(select(Activity).where(Activity.athlete_id == athlete.id)).all())
     now = datetime.now(UTC)
     seven_count, _, seven_meters = window_stats(activities, now=now, days=7)
+    fourteen_count, _, fourteen_meters = window_stats(activities, now=now, days=14)
     twenty_eight_count, _, twenty_eight_meters = window_stats(activities, now=now, days=28)
     filters = [Activity.athlete_id == athlete.id, Activity.id != activity.id]
     if workout_type:
@@ -865,6 +914,8 @@ def build_report_context(session: Session, athlete: Athlete, activity: Activity)
             "primary_race_goal": None if goal is None else goal.primary_race_goal,
             "goal_race_date": None if goal is None or goal.goal_race_date is None else goal.goal_race_date.isoformat(),
             "target_time": athlete.target_time,
+            "training_phase": None,
+            "training_phase_note": "No training phase is stored.",
             "intake": _intake_for_report(athlete),
             "thresholds": [
                 {
@@ -880,13 +931,15 @@ def build_report_context(session: Session, athlete: Athlete, activity: Activity)
         "recent_training": {
             "last_7_days_activity_count": seven_count,
             "last_7_days_distance_meters": seven_meters,
+            "last_14_days_activity_count": fourteen_count,
+            "last_14_days_distance_meters": fourteen_meters,
             "last_28_days_activity_count": twenty_eight_count,
             "last_28_days_distance_meters": twenty_eight_meters,
         },
         "comparable_activities": comparable,
         "comparable_match": "same_stored_workout_type" if workout_type else "recent_activities_because_this_workout_has_no_type",
         "prior_interpretations": prior_interpretations,
-        "planned_vs_actual": _planned_vs_actual(session, athlete, activity),
+        "planned_vs_actual": planned,
     }
 
 

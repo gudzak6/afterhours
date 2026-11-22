@@ -274,6 +274,7 @@ class ActivitySample(Base):
     heart_rate_bpm: Mapped[float | None] = mapped_column(Float)
     cadence_spm: Mapped[float | None] = mapped_column(Float)
     altitude_meters: Mapped[float | None] = mapped_column(Float)
+    power_watts: Mapped[float | None] = mapped_column(Float)
     latitude: Mapped[float | None] = mapped_column(Float)
     longitude: Mapped[float | None] = mapped_column(Float)
     present_fields: Mapped[list] = mapped_column(JSON, nullable=False)

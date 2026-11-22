@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AthleteName } from "@/components/athlete-name";
 import { CoachingReport } from "@/components/coaching-report";
-import { WorkoutBreakdown } from "@/components/workout-breakdown";
+import { DetectedWorkout, WorkoutBreakdown } from "@/components/workout-breakdown";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createReport, deleteActivity, errorMessage, getActivity, type ActivityDetail } from "@/lib/api";
@@ -134,6 +134,8 @@ export default function ActivityDetailPage() {
           </dl>
         </CardContent>
       </Card>
+
+      <DetectedWorkout metrics={detail.metrics} />
 
       <Card>
         <CardHeader>

@@ -38,8 +38,11 @@ function Assessment({ report }: { report: Record<string, unknown> }) {
         {effort ? <span className="rounded-full bg-emerald-100 px-3 py-1 text-sm font-medium text-emerald-900">{effort}</span> : null}
         {classification ? <span className="rounded-full bg-emerald-100 px-3 py-1 text-sm font-medium text-emerald-900">{classification}</span> : null}
       </div>
+      <Section title="Workout Identification" body={text(report.workout_identification)} />
+      <Section title="Execution Analysis" body={text(report.execution_analysis)} />
       <Section title="Summary" body={text(report.summary)} />
       <Section title="Training Impact" body={text(report.training_impact)} />
+      <Section title="Fitness Indicators" body={text(report.fitness_indicators)} />
       {wentWell.length > 0 ? (
         <div className="border-l-4 border-emerald-500 pl-4">
           <p className="font-semibold text-emerald-800">What Went Well</p>
@@ -48,10 +51,11 @@ function Assessment({ report }: { report: Record<string, unknown> }) {
       ) : null}
       {focus.length > 0 ? (
         <div className="border-l-4 border-amber-500 pl-4">
-          <p className="font-semibold text-amber-800">What to check</p>
+          <p className="font-semibold text-amber-800">Areas to Monitor</p>
           <p className="mt-1 leading-6">{paragraph(focus)}</p>
         </div>
       ) : null}
+      <Section title="Coach's Takeaway" body={text(report.coach_takeaway)} />
     </div>
   );
 }

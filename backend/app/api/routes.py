@@ -436,6 +436,12 @@ def get_activity(
                 "average_speed_mps": lap.average_speed_mps,
                 "average_heart_rate_bpm": lap.average_heart_rate_bpm,
                 "max_heart_rate_bpm": lap.max_heart_rate_bpm,
+                "average_cadence": lap.average_cadence_spm,
+                "elapsed_seconds": raw.get("elapsed_seconds"),
+                "lap_trigger": raw.get("lap_trigger"),
+                "ascent_meters": raw.get("ascent_meters"),
+                "descent_meters": raw.get("descent_meters"),
+                "average_power_watts": raw.get("average_power_watts"),
             }
         )
     sample_dicts = [
@@ -444,10 +450,21 @@ def get_activity(
             "distance_meters": sample.distance_meters,
             "speed_mps": sample.speed_mps,
             "heart_rate_bpm": sample.heart_rate_bpm,
+            "cadence_spm": sample.cadence_spm,
             "altitude_meters": sample.altitude_meters,
+            "power_watts": sample.power_watts,
         }
         for sample in samples
     ]
+    workout_steps = db.scalars(
+        select(ActivityWorkoutStep)
+        .where(ActivityWorkoutStep.activity_id == activity.id)
+        .order_by(ActivityWorkoutStep.step_index)
+    ).all()
+    fit_summary = activity.fit_summary if isinstance(activity.fit_summary, dict) else {}
+    lt2 = db.scalar(
+        select(AthleteThreshold).where(AthleteThreshold.athlete_id == athlete.id, AthleteThreshold.name == "lt2")
+    )
     metrics = activity_metrics(
         lap_dicts,
         sample_dicts,
@@ -458,6 +475,13 @@ def get_activity(
         heart_rate_zones=preferences.get("heart_rate_zones") or None,
         elevation_gain_meters=activity.elevation_gain_meters,
         elevation_loss_meters=activity.elevation_loss_meters,
+        steps=[
+            {"intensity": step.intensity, "duration_seconds": step.duration_seconds, "distance_meters": step.distance_meters}
+            for step in workout_steps
+        ],
+        timer_events=list(fit_summary.get("timer_events") or []),
+        fit_session=fit_summary,
+        lt2_pace_seconds_per_mile=None if lt2 is None else lt2.pace_seconds_per_mile,
     )
     step_count = db.scalar(
         select(func.count()).select_from(ActivityWorkoutStep).where(ActivityWorkoutStep.activity_id == activity.id)

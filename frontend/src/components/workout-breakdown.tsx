@@ -49,6 +49,9 @@ function miles(meters: number | null): string | null {
 export function WorkoutBreakdown({ metrics }: { metrics: Record<string, unknown> }) {
   const breakdown = workoutBreakdown(metrics);
   if (!breakdown) {
+    if (metrics.workout_intelligence) {
+      return null;
+    }
     return (
       <Card>
         <CardHeader>
@@ -136,6 +139,105 @@ export function WorkoutBreakdown({ metrics }: { metrics: Record<string, unknown>
             </div>
           ))}
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+const WORKOUT_LABELS: Record<string, string> = {
+  hill_sprints: "Hill sprints",
+  strides: "Strides",
+  intervals: "Intervals",
+  threshold: "Threshold",
+  tempo: "Tempo",
+  progression: "Progression",
+  easy: "Easy run",
+  long_run: "Long run",
+  recovery: "Recovery",
+  unknown: "Unknown",
+};
+
+type EffortRow = {
+  index?: number;
+  duration_seconds?: number;
+  distance_meters?: number;
+  pace_seconds_per_mile?: number | null;
+  elevation_change_meters?: number | null;
+  average_heart_rate_bpm?: number | null;
+  heart_rate_usable?: boolean;
+  recovery_seconds?: number | null;
+};
+
+export function DetectedWorkout({ metrics }: { metrics: Record<string, unknown> }) {
+  const value = metrics.workout_intelligence;
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const intelligence = value as {
+    classification?: { workout_type?: string; confidence?: number; repetitions?: number | null; ambiguous?: boolean; evidence?: string[] };
+    observed?: { efforts?: EffortRow[]; moving_seconds?: number | null; elapsed_seconds?: number | null; pause_count?: number };
+    data_quality?: { limitations?: string[]; missing_fields?: string[] };
+  };
+  const classification = intelligence.classification;
+  if (!classification?.workout_type) {
+    return null;
+  }
+  const label = WORKOUT_LABELS[classification.workout_type] ?? classification.workout_type;
+  const confidence = typeof classification.confidence === "number" ? Math.round(classification.confidence * 100) : null;
+  const efforts = intelligence.observed?.efforts ?? [];
+  const limitations = intelligence.data_quality?.limitations ?? [];
+  const pauses = intelligence.observed?.pause_count ?? 0;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Detected workout</CardTitle>
+        <CardDescription>
+          {label}
+          {confidence != null ? ` · ${confidence}% confidence` : ""}
+          {classification.repetitions ? ` · ${classification.repetitions} efforts` : ""}
+          {pauses > 0 ? ` · ${pauses} pause${pauses === 1 ? "" : "s"}` : ""}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        {classification.ambiguous || classification.workout_type === "unknown" ? (
+          <p>The recording does not identify a workout. Missing evidence is listed below.</p>
+        ) : null}
+        {efforts.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="text-xs tracking-wide text-muted-foreground uppercase">
+                <tr>
+                  <th className="py-2 pr-3">Rep</th>
+                  <th className="py-2 pr-3">Time</th>
+                  <th className="py-2 pr-3">Distance</th>
+                  <th className="py-2 pr-3">Pace</th>
+                  <th className="py-2 pr-3">Climb</th>
+                  <th className="py-2 pr-3">Heart rate</th>
+                  <th className="py-2">Recovery</th>
+                </tr>
+              </thead>
+              <tbody>
+                {efforts.map((effort, index) => (
+                  <tr key={effort.index ?? index} className="border-t">
+                    <td className="py-2 pr-3">{effort.index ?? index + 1}</td>
+                    <td className="py-2 pr-3">{formatDuration(effort.duration_seconds ?? null, effort.duration_seconds != null)}</td>
+                    <td className="py-2 pr-3">{effort.distance_meters != null ? `${Math.round(effort.distance_meters)} m` : "—"}</td>
+                    <td className="py-2 pr-3">{formatPace(effort.pace_seconds_per_mile ?? null, effort.pace_seconds_per_mile != null)}</td>
+                    <td className="py-2 pr-3">{effort.elevation_change_meters != null ? `${effort.elevation_change_meters.toFixed(1)} m` : "—"}</td>
+                    <td className="py-2 pr-3">
+                      {effort.heart_rate_usable
+                        ? formatHeartRate(effort.average_heart_rate_bpm ?? null, effort.average_heart_rate_bpm != null)
+                        : "not usable"}
+                    </td>
+                    <td className="py-2">{effort.recovery_seconds != null ? formatDuration(effort.recovery_seconds, true) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+        {limitations.length > 0 ? <p className="text-muted-foreground">{limitations[0]}</p> : null}
       </CardContent>
     </Card>
   );

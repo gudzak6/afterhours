@@ -26,6 +26,7 @@ from app.models import (
     WorkoutSegment,
 )
 from app.workouts.classify import classify_laps, compare_reference
+from app.workouts.detect import detect_workout
 
 _FILE_LOCK = threading.Lock()
 
@@ -113,6 +114,7 @@ def store_parsed_activity(session: Session, activity: Activity, parsed: dict, zi
                     "cadence_field": lap["cadence_field"],
                     "ascent_meters": lap["ascent_meters"],
                     "descent_meters": lap["descent_meters"],
+                    "average_power_watts": lap.get("average_power_watts"),
                 },
             )
         )
@@ -128,6 +130,7 @@ def store_parsed_activity(session: Session, activity: Activity, parsed: dict, zi
                 "heart_rate_bpm": record["heart_rate_bpm"],
                 "cadence_spm": record["cadence"],
                 "altitude_meters": record["altitude_meters"],
+                "power_watts": record.get("power_watts"),
                 "latitude": record["latitude"],
                 "longitude": record["longitude"],
                 "present_fields": record["present_fields"],
@@ -154,10 +157,11 @@ def store_parsed_activity(session: Session, activity: Activity, parsed: dict, zi
 
     fit_session = parsed["session"]
     sport = fit_session.get("sport")
+    lt2_mps = _lt2_speed(session, activity.athlete_id)
     classified = classify_laps(
         parsed["laps"],
         sport=sport,
-        lt2_speed_mps=_lt2_speed(session, activity.athlete_id),
+        lt2_speed_mps=lt2_mps,
     )
     if (
         activity.start_time_local
@@ -170,6 +174,32 @@ def store_parsed_activity(session: Session, activity: Activity, parsed: dict, zi
         )
     if not parsed["workout_steps_found"]:
         classified["evidence"]["workout_steps"] = "The FIT file has no workout_step messages."
+    lt2_pace = None if lt2_mps is None else 1609.344 / lt2_mps
+    detected = detect_workout(
+        parsed["laps"],
+        parsed["records"],
+        steps=parsed["steps"],
+        timer_events=parsed.get("events") or [],
+        session=fit_session,
+        lt2_pace_seconds_per_mile=lt2_pace,
+    )
+    detected_class = detected["classification"]
+    classified["evidence"]["workout_intelligence"] = {
+        "workout_type": detected_class["workout_type"],
+        "confidence": detected_class["confidence"],
+        "repetitions": detected_class["repetitions"],
+        "source": detected_class["source"],
+        "evidence": detected_class["evidence"],
+        "ambiguous": detected_class["ambiguous"],
+    }
+    if (
+        not user_locked
+        and detected_class["workout_type"] != "unknown"
+        and detected_class["confidence"] >= 0.7
+    ):
+        classified["workout_type"] = detected_class["workout_type"]
+        classified["confidence"] = detected_class["confidence"]
+        classified["uncertainty"] = None if not detected["data_quality"]["limitations"] else detected["data_quality"]["limitations"][0]
 
     existing = existing_classification
     if user_locked:
@@ -214,6 +244,16 @@ def store_parsed_activity(session: Session, activity: Activity, parsed: dict, zi
         "record_count": len(parsed["records"]),
         "parsed_lap_count": len(parsed["laps"]),
         "workout_step_count": len(parsed["steps"]),
+        "timer_events": [
+            {
+                "event": event.get("event"),
+                "event_type": event.get("event_type"),
+                "timer_trigger": event.get("timer_trigger"),
+                "timestamp": event["timestamp"].isoformat() if event.get("timestamp") else None,
+            }
+            for event in parsed.get("events") or []
+        ],
+        "power_sample_count": sum(1 for record in parsed["records"] if record.get("power_watts") is not None),
         "start_time_utc": fit_session.get("start_time_utc").isoformat()
         if fit_session.get("start_time_utc")
         else None,
