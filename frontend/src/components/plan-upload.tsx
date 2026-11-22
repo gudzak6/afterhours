@@ -15,6 +15,7 @@ export function PlanUpload() {
   const [request, setRequest] = useState("");
   const [fileKey, setFileKey] = useState(0);
   const fileInput = useRef<HTMLInputElement>(null);
+  const [source, setSource] = useState<PlanSource | null>(null);
   const [busy, setBusy] = useState<"file" | "generate" | "saved" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ProgramImportResult | null>(null);
@@ -98,18 +99,18 @@ export function PlanUpload() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Upload a plan</CardTitle>
+        <CardTitle>Choose a plan</CardTitle>
         <CardDescription>
-          Choose an athlete and the day the plan should begin. Dates written in the file are ignored, and the weeks move so the first workout lands on that day. A written program is read by the agent. Workouts already planned between the new first and last date are replaced.
+          Pick one way to write it. The athlete and start date apply to whichever you choose. Dates in a file are ignored, and the weeks move so the first workout lands on the start date. Workouts already planned in that span are replaced.
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form className="space-y-3" onSubmit={onSubmit}>
+        <form className="space-y-4" onSubmit={onSubmit}>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block text-sm">
               <span className="text-muted-foreground">Athlete</span>
               <select
-                className="mt-1 h-9 w-full rounded-lg border border-input bg-card px-3"
+                className="mt-1 h-11 w-full rounded-lg border border-input bg-card px-3 text-base sm:h-9 sm:text-sm"
                 value={athleteId ?? ""}
                 onChange={(event) => setAthleteId(Number(event.target.value))}
                 disabled={busy !== null || athletes.length === 0}
@@ -126,56 +127,89 @@ export function PlanUpload() {
               <span className="text-muted-foreground">Plan start date</span>
               <input
                 type="date"
-                className="mt-1 h-9 w-full rounded-lg border border-input bg-card px-3"
+                className="mt-1 h-11 w-full rounded-lg border border-input bg-card px-3 text-base sm:h-9 sm:text-sm"
                 value={startDate}
                 onChange={(event) => setStartDate(event.target.value)}
                 disabled={busy !== null}
               />
             </label>
           </div>
-          <div className="block text-sm">
-            <span className="text-muted-foreground">Program file</span>
-            <div className="mt-1 flex flex-wrap items-center gap-3">
-              <input
-                ref={fileInput}
-                key={fileKey}
-                type="file"
-                accept=".csv,.xlsx,.txt,.md,.text"
-                className="sr-only"
-                disabled={busy !== null}
-                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-              />
-              <Button type="button" variant="outline" disabled={busy !== null} onClick={() => fileInput.current?.click()}>
-                Choose file
-              </Button>
-              <span className="text-muted-foreground">{file ? file.name : "No file chosen"}</span>
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">How should this plan be written?</legend>
+            <div className="grid gap-2">
+              {PLAN_SOURCES.map((item) => {
+                const selected = source === item.id;
+                return (
+                  <label
+                    key={item.id}
+                    className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 ${selected ? "border-primary bg-muted" : "border-border bg-card"}`}
+                  >
+                    <input
+                      type="radio"
+                      name="plan-source"
+                      className="mt-1 size-4"
+                      checked={selected}
+                      disabled={busy !== null}
+                      onChange={() => setSource(item.id)}
+                    />
+                    <span>
+                      <span className="block text-sm font-medium">{item.title}</span>
+                      <span className="mt-0.5 block text-sm text-muted-foreground">{item.detail}</span>
+                    </span>
+                  </label>
+                );
+              })}
             </div>
-          </div>
-          <Button type="submit" disabled={busy !== null || !athleteId || !file}>
-            {busy === "file" ? "Reading the program…" : "Update plan"}
-          </Button>
-          <div className="space-y-2 border-t border-border pt-3">
-            <p className="text-sm font-medium">{SAVED_PROGRAM.name}</p>
-            <p className="text-sm text-muted-foreground">{SAVED_PROGRAM.detail}</p>
-            <Button type="button" variant="outline" className="min-h-11" disabled={busy !== null || !athleteId} onClick={() => void onApplySaved()}>
-              {busy === "saved" ? "Applying the plan…" : `Apply to ${athlete?.display_name ?? "athlete"}`}
-            </Button>
-          </div>
-          <div className="space-y-2 border-t border-border pt-3">
-            <label className="block text-sm">
-              <span className="text-muted-foreground">Or ask for a plan</span>
-              <textarea
-                className="mt-1 min-h-20 w-full rounded-lg border border-input bg-card px-3 py-2"
-                value={request}
-                placeholder="I want a plan for training for the mile"
-                disabled={busy !== null}
-                onChange={(event) => setRequest(event.target.value)}
-              />
-            </label>
-            <Button type="button" variant="outline" disabled={busy !== null || !athleteId || request.trim().length < 8} onClick={() => void onGenerate()}>
-              {busy === "generate" ? "Writing the plan…" : "Use AI to generate a plan"}
-            </Button>
-          </div>
+          </fieldset>
+          {source === "file" ? (
+            <div className="space-y-3 rounded-lg border border-border p-3">
+              <p className="text-sm font-medium">Choose a file to upload</p>
+              <div className="flex flex-wrap items-center gap-3">
+                <input
+                  ref={fileInput}
+                  key={fileKey}
+                  type="file"
+                  accept=".csv,.xlsx,.txt,.md,.text"
+                  className="sr-only"
+                  disabled={busy !== null}
+                  onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                />
+                <Button type="button" variant="outline" className="min-h-11" disabled={busy !== null} onClick={() => fileInput.current?.click()}>
+                  Choose file
+                </Button>
+                <span className="text-sm text-muted-foreground">{file ? file.name : "No file chosen"}</span>
+              </div>
+              <Button type="submit" className="min-h-11" disabled={busy !== null || !athleteId || !file}>
+                {busy === "file" ? "Reading the file…" : `Upload onto ${athlete?.display_name ?? "this athlete"}`}
+              </Button>
+            </div>
+          ) : null}
+          {source === "saved" ? (
+            <div className="space-y-3 rounded-lg border border-border p-3">
+              <p className="text-sm font-medium">{SAVED_PROGRAM.name}</p>
+              <p className="text-sm text-muted-foreground">{SAVED_PROGRAM.detail}</p>
+              <Button type="button" className="min-h-11" disabled={busy !== null || !athleteId} onClick={() => void onApplySaved()}>
+                {busy === "saved" ? "Applying the spreadsheet…" : `Apply this spreadsheet to ${athlete?.display_name ?? "this athlete"}`}
+              </Button>
+            </div>
+          ) : null}
+          {source === "ask" ? (
+            <div className="space-y-3 rounded-lg border border-border p-3">
+              <label className="block text-sm">
+                <span className="font-medium">Ask AI</span>
+                <textarea
+                  className="mt-1 min-h-24 w-full rounded-lg border border-input bg-card px-3 py-2 text-base sm:text-sm"
+                  value={request}
+                  placeholder="A 16-week plan for the mile, starting from 30 miles a week."
+                  disabled={busy !== null}
+                  onChange={(event) => setRequest(event.target.value)}
+                />
+              </label>
+              <Button type="button" className="min-h-11" disabled={busy !== null || !athleteId || request.trim().length < 8} onClick={() => void onGenerate()}>
+                {busy === "generate" ? "Writing the plan…" : `Ask AI to write ${athlete?.display_name ?? "this athlete"}’s plan`}
+              </Button>
+            </div>
+          ) : null}
         </form>
         {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
         {result && athlete ? (
@@ -200,6 +234,14 @@ export function PlanUpload() {
     </Card>
   );
 }
+
+type PlanSource = "file" | "saved" | "ask";
+
+const PLAN_SOURCES: Array<{ id: PlanSource; title: string; detail: string }> = [
+  { id: "file", title: "Choose a file to upload", detail: "A spreadsheet or text file from this computer." },
+  { id: "saved", title: "Apply the existing spreadsheet", detail: "The saved Flight School plan for the New York City Marathon." },
+  { id: "ask", title: "Ask AI", detail: "Describe the race, and a plan is written for this athlete." },
+];
 
 const SAVED_PROGRAM = {
   name: "Flight School NYCM 50–60 mpw",
