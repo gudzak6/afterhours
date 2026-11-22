@@ -56,7 +56,11 @@ def delete_athlete(session: Session, athlete: Athlete) -> None:
     if conversation_ids:
         session.execute(delete(AiMessage).where(AiMessage.conversation_id.in_(conversation_ids)))
         session.execute(delete(AiConversation).where(AiConversation.id.in_(conversation_ids)))
+    for model in (WorkoutFeedback, WorkoutComment, CoachMessage, LactateReading, Race):
+        session.execute(delete(model).where(model.athlete_id == athlete.id))
     if activity_ids:
+        session.execute(delete(WorkoutFeedback).where(WorkoutFeedback.activity_id.in_(activity_ids)))
+        session.execute(delete(WorkoutComment).where(WorkoutComment.activity_id.in_(activity_ids)))
         for model in (
             ActivitySample,
             ActivityLap,
@@ -68,8 +72,6 @@ def delete_athlete(session: Session, athlete: Athlete) -> None:
         ):
             session.execute(delete(model).where(model.activity_id.in_(activity_ids)))
         session.execute(delete(Activity).where(Activity.id.in_(activity_ids)))
-    for model in (WorkoutFeedback, WorkoutComment, CoachMessage, LactateReading, Race):
-        session.execute(delete(model).where(model.athlete_id == athlete.id))
     workout_ids = list(session.scalars(select(ScheduledWorkout.id).where(ScheduledWorkout.athlete_id == athlete.id)).all())
     if workout_ids:
         session.execute(delete(PlanRevision).where(PlanRevision.scheduled_workout_id.in_(workout_ids)))
@@ -77,8 +79,18 @@ def delete_athlete(session: Session, athlete: Athlete) -> None:
     for model in (GarminConnection, TrainingGoal, AthleteThreshold, SyncJob):
         session.execute(delete(model).where(model.athlete_id == athlete.id))
     session.delete(athlete)
+    session.flush()
+    kept_ids = set(
+        session.scalars(select(Activity.garmin_activity_id).where(Activity.garmin_activity_id.in_(garmin_ids or [0]))).all()
+    )
+    kept_paths = set(
+        session.scalars(select(ActivityFile.storage_path).where(ActivityFile.storage_path.in_(file_paths or [""]))).all()
+    )
     session.commit()
-    _remove_files(file_paths, garmin_ids)
+    _remove_files(
+        [path for path in file_paths if path not in kept_paths],
+        [garmin_id for garmin_id in garmin_ids if garmin_id not in kept_ids],
+    )
 
 
 def _remove_files(file_paths: list[str], garmin_ids: list[int]) -> None:

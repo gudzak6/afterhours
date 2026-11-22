@@ -2,7 +2,7 @@
 
 from datetime import UTC, date, datetime
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session
 
 from app.database import Base
@@ -18,12 +18,20 @@ from app.models import (
     ScheduledWorkout,
     SyncJob,
     TrainingGoal,
+    WorkoutFeedback,
 )
 from app.services.athletes import delete_athlete
 
 
 def test_delete_athlete_removes_their_records_only() -> None:
     engine = create_engine("sqlite:///:memory:")
+
+    @event.listens_for(engine, "connect")
+    def _enable_foreign_keys(dbapi_connection, _connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     Base.metadata.create_all(engine)
     now = datetime.now(UTC)
     with Session(engine) as session:
@@ -50,6 +58,7 @@ def test_delete_athlete_removes_their_records_only() -> None:
         session.add_all([activity, kept_activity])
         session.commit()
         session.add(ActivityLap(activity_id=activity.id, lap_number=1, present_fields=[], raw_lap={}))
+        session.add(WorkoutFeedback(athlete_id=removed.id, activity_id=activity.id, comment="Easy", updated_at=now))
         workout = ScheduledWorkout(
             athlete_id=removed.id,
             scheduled_date=date(2026, 11, 11),
@@ -76,6 +85,7 @@ def test_delete_athlete_removes_their_records_only() -> None:
         assert session.scalar(select(Activity).where(Activity.garmin_activity_id == 42)) is None
         assert session.scalar(select(Activity).where(Activity.garmin_activity_id == 43)) is not None
         assert session.scalars(select(ActivityLap)).all() == []
+        assert session.scalars(select(WorkoutFeedback)).all() == []
         assert session.scalars(select(ScheduledWorkout)).all() == []
         assert session.scalars(select(PlanRevision)).all() == []
         assert session.scalars(select(AiMessage)).all() == []
