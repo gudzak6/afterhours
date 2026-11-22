@@ -8,8 +8,6 @@ import { TrainingPlan } from "@/components/training-plan";
 import { AthleteRaces } from "@/components/athlete-races";
 import { AthleteStats } from "@/components/athlete-stats";
 import { MileageHistory } from "@/components/mileage-history";
-import { WeeklyChart } from "@/components/weekly-chart";
-import { StatusPill } from "@/components/status-pill";
 import { AthleteName } from "@/components/athlete-name";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,10 +20,8 @@ import {
   type Athlete,
   type AthleteGoals,
   type RaceEntry,
-  type RosterAthlete,
   type MileageChart,
   type RunningStats,
-  type WeeklyMileage,
 } from "@/lib/api";
 import { formatMiles, formatWhen } from "@/lib/format";
 
@@ -43,8 +39,6 @@ export default function AthletePage() {
   const [removing, setRemoving] = useState(false);
   const section = search.get("section") || "overview";
   const [athlete, setAthlete] = useState<Athlete | null>(null);
-  const [status, setStatus] = useState<RosterAthlete | null>(null);
-  const [weekly, setWeekly] = useState<WeeklyMileage[]>([]);
   const [mileage, setMileage] = useState<MileageChart | null>(null);
   const [runningStats, setRunningStats] = useState<RunningStats | null>(null);
   const [recent, setRecent] = useState<Array<{ garmin_activity_id: number; name: string | null; distance_meters: number | null; start_time_local: string | null; workout_type: string | null }>>([]);
@@ -52,17 +46,16 @@ export default function AthletePage() {
   const [goal, setGoal] = useState<AthleteGoals | null>(null);
   const [races, setRaces] = useState<RaceEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+  const [activitiesReady, setActivitiesReady] = useState(false);
 
   const load = useCallback(async () => {
     if (!Number.isFinite(athleteId)) return;
+    setReady(false);
+    setActivitiesReady(false);
     try {
-      const [overview, activityList] = await Promise.all([
-        getAthleteOverview(athleteId),
-        getActivities(200),
-      ]);
+      const overview = await getAthleteOverview(athleteId);
       setAthlete(overview.athlete);
-      setStatus(overview.status);
-      setWeekly(overview.weekly_mileage);
       setMileage(overview.mileage_chart);
       setRunningStats(overview.running_stats);
       setRecent(overview.recent_workouts);
@@ -72,10 +65,19 @@ export default function AthletePage() {
           : null,
       );
       setRaces(overview.races ?? []);
-      setActivities(activityList.activities.filter((activity) => activity.athlete_id === athleteId));
       setError(null);
+      setReady(true);
     } catch (loadError) {
       setError(errorMessage(loadError));
+      return;
+    }
+    try {
+      const activityList = await getActivities(200);
+      setActivities(activityList.activities.filter((activity) => activity.athlete_id === athleteId));
+    } catch (loadError) {
+      setError(errorMessage(loadError));
+    } finally {
+      setActivitiesReady(true);
     }
   }, [athleteId]);
 
@@ -111,10 +113,7 @@ export default function AthletePage() {
           <p className="text-xs text-muted-foreground">
             <Link href="/athletes" className="hover:underline">All athletes</Link>
           </p>
-          <h1 className="font-heading text-2xl tracking-tight sm:text-3xl">{athlete ? <AthleteName name={athlete.display_name} /> : "Athlete"}</h1>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {status ? <StatusPill status={status.training_status} /> : null}
-          </div>
+          <h1 className="font-heading text-2xl tracking-tight sm:text-3xl">{athlete ? <AthleteName name={athlete.display_name} /> : "Loading…"}</h1>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="destructive" onClick={() => void onRemove()} disabled={removing || !athlete}>
@@ -135,7 +134,9 @@ export default function AthletePage() {
         ))}
       </nav>
 
-      {section === "overview" ? (
+      {!ready && !error ? <p className="text-sm text-muted-foreground">Loading this athlete…</p> : null}
+
+      {ready && section === "overview" ? (
         <div className="grid items-start gap-4 min-[960px]:grid-cols-[minmax(0,1fr)_22rem]">
           <div className="space-y-4">
             <AthleteRaces athleteId={athleteId} goal={goal} races={races} />
@@ -150,17 +151,6 @@ export default function AthletePage() {
                 </CardContent>
               </Card>
             ) : null}
-            <Card>
-              <CardHeader>
-                <CardTitle>Recent weeks</CardTitle>
-                <CardDescription>
-                  {status?.weekly_miles == null ? "No distance stored this week." : `${status.weekly_miles.toFixed(1)} miles stored so far this week.`}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <WeeklyChart weeks={weekly} />
-              </CardContent>
-            </Card>
             <Card>
               <CardHeader>
                 <CardTitle>Recent workouts</CardTitle>
@@ -211,14 +201,16 @@ export default function AthletePage() {
         </div>
       ) : null}
 
-      {section === "activities" ? (
+      {ready && section === "activities" ? (
         <Card>
           <CardHeader>
             <CardTitle>Activities</CardTitle>
             <CardDescription>Open an activity for the stored analysis.</CardDescription>
           </CardHeader>
           <CardContent>
-            {activities.length === 0 ? (
+            {!activitiesReady ? (
+              <p className="text-sm text-muted-foreground">Loading activities…</p>
+            ) : activities.length === 0 ? (
               <p className="text-sm text-muted-foreground">No activities for this athlete.</p>
             ) : (
               <ul className="divide-y divide-border text-sm">
@@ -238,7 +230,7 @@ export default function AthletePage() {
         </Card>
       ) : null}
 
-      {section === "plan" ? <TrainingPlan athleteId={athleteId} /> : null}
+      {ready && section === "plan" ? <TrainingPlan athleteId={athleteId} /> : null}
     </div>
   );
 }

@@ -42,6 +42,102 @@ function dayLabel(iso: string): string {
   return `${WEEKDAYS[date.getDay()]}, ${MONTHS[date.getMonth()]} ${date.getDate()}`;
 }
 
+const LATER_BRIEF_SECTIONS = [
+  "Priority Athlete Findings",
+  "Positive Training Developments",
+  "Upcoming Training Considerations",
+  "Data Limitations",
+];
+
+function athleteClauses(sentence: string, hits: string[]) {
+  const placed = hits
+    .map((name) => ({ name, index: sentence.toLowerCase().indexOf(name.toLowerCase()) }))
+    .filter((item) => item.index >= 0)
+    .sort((a, b) => a.index - b.index);
+  if (placed.length < 2) return placed.map((item) => ({ name: item.name, text: sentence }));
+  return placed.map((item, index) => {
+    const end = index + 1 < placed.length ? placed[index + 1].index : sentence.length;
+    const text = sentence
+      .slice(item.index, end)
+      .replace(/\s+and\s*$/i, "")
+      .replace(/,\s*$/, "")
+      .trim();
+    return { name: item.name, text };
+  });
+}
+
+function executiveAssessment(summary: string, athleteNames: string[]) {
+  const marker = "Executive Coaching Assessment";
+  const start = summary.indexOf(marker);
+  if (start === -1) return null;
+  let body = summary.slice(start + marker.length).trim();
+  let cut = body.length;
+  for (const heading of LATER_BRIEF_SECTIONS) {
+    const index = body.indexOf(heading);
+    if (index >= 0 && index < cut) cut = index;
+  }
+  body = body.slice(0, cut).trim();
+  const lines = body.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const explicit = lines.filter((line) => /^[-•*]\s+/.test(line));
+  if (explicit.length > 0) {
+    return {
+      intro: lines.filter((line) => !/^[-•*]\s+/.test(line)).join(" "),
+      bullets: explicit.map((line) => line.replace(/^[-•*]\s+/, "")),
+    };
+  }
+  const names = athleteNames.filter((name) => name && name.toLowerCase() !== "athlete").sort((a, b) => b.length - a.length);
+  const sentences = body.split(/(?<=[.!?])\s+/).map((sentence) => sentence.trim()).filter(Boolean);
+  const intro: string[] = [];
+  const closing: string[] = [];
+  const own = new Map<string, string[]>();
+  let seenAthlete = false;
+  for (const sentence of sentences) {
+    const hits = names.filter((name) => sentence.toLowerCase().includes(name.toLowerCase()));
+    if (hits.length === 0) {
+      (seenAthlete ? closing : intro).push(sentence);
+      continue;
+    }
+    seenAthlete = true;
+    const pieces = athleteClauses(sentence, hits);
+    for (const piece of pieces) {
+      const list = own.get(piece.name) ?? [];
+      list.push(piece.text);
+      own.set(piece.name, list);
+    }
+  }
+  const bullets = names
+    .filter((name) => own.has(name))
+    .map((name) => {
+      const text = [
+        ...(own.get(name) ?? []).map((part) => (/[.!?]$/.test(part) ? part : `${part}.`)),
+        ...closing,
+      ].join(" ");
+      return text.toLowerCase().startsWith(name.toLowerCase()) ? text : `${name}: ${text}`;
+    });
+  if (bullets.length === 0) return { intro: body, bullets: [] as string[] };
+  return { intro: intro.join(" "), bullets };
+}
+
+function BriefAssessment({ summary, athleteNames }: { summary: string; athleteNames: string[] }) {
+  const assessment = executiveAssessment(summary, athleteNames);
+  if (!assessment) {
+    return <p className="max-w-3xl text-sm leading-6 whitespace-pre-line">{summary}</p>;
+  }
+  return (
+    <div className="max-w-3xl space-y-2 text-sm leading-6">
+      <p className="font-medium">Executive Coaching Assessment</p>
+      {assessment.intro ? <p>{assessment.intro}</p> : null}
+      {assessment.bullets.length > 0 ? (
+        <ul className="list-disc space-y-2 pl-5">
+          {assessment.bullets.map((bullet) => (
+            <li key={bullet}>{bullet}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 type DashboardActivity = CoachDashboard["recent_activities"][number];
 type PlannedWorkout = CoachDashboard["planned_workouts"][number];
 
@@ -534,6 +630,37 @@ export default function DashboardPage() {
             }}
             onReload={() => void reloadFromGarmin(selectedDay)}
           />
+          <h2 className="font-heading text-xl tracking-tight">Athletes runs today</h2>
+          {shiftDay(selectedDay, -parseDay(selectedDay).getDay()) !== dashboard.week_start ? (
+            <p className="text-sm text-muted-foreground">Loading {dayLabel(selectedDay)}…</p>
+          ) : rowsForDay(dashboard, selectedDay).length === 0 ? (
+            <p className="text-sm text-muted-foreground">No runs stored for {dayLabel(selectedDay)}.</p>
+          ) : (
+            <>
+            <div className="space-y-3">
+            {rowsForDay(dashboard, selectedDay).map((row) => (
+              <DayCard
+                key={row.key}
+                row={row}
+                today={dashboard.today}
+                onAnalyze={(activity) => {
+                  setAnalysisId(activity.garmin_activity_id);
+                  setAnalysisError(null);
+                  if (!activity.analysis_summary) void runAnalysis(activity.garmin_activity_id);
+                }}
+              />
+            ))}
+            </div>
+            <AnalysisModal
+              activity={dashboard.recent_activities.find((item) => item.garmin_activity_id === analysisId) ?? null}
+              athleteName={rowsForDay(dashboard, selectedDay).find((row) => row.activity?.garmin_activity_id === analysisId)?.athleteName ?? null}
+              busy={analyzingId !== null && analyzingId === analysisId}
+              error={analysisError}
+              onClose={() => setAnalysisId(null)}
+              onRun={(garminActivityId) => void runAnalysis(garminActivityId)}
+            />
+            </>
+          )}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-3">
               <div className="flex items-center gap-2">
@@ -574,11 +701,20 @@ export default function DashboardPage() {
               {writingBrief && !dashboard.brief ? (
                 <p className="text-sm text-muted-foreground">Writing the coaching brief for {dayLabel(selectedDay)}…</p>
               ) : dashboard.brief ? (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {selectedDay > dashboard.today ? (
                     <p className="text-xs tracking-[0.14em] text-muted-foreground uppercase">Preview · this day has not been run</p>
                   ) : null}
-                  <p className="max-w-3xl text-sm leading-6 whitespace-pre-line">{dashboard.brief.daily_summary}</p>
+                  <BriefAssessment
+                    summary={dashboard.brief.daily_summary}
+                    athleteNames={dashboard.athletes.map((athlete) => athlete.display_name)}
+                  />
+                  {writingBrief ? (
+                    <p className="text-sm text-muted-foreground">Writing a new coaching brief for {dayLabel(selectedDay)}…</p>
+                  ) : null}
+                  <Button type="button" variant="outline" className="min-h-11" disabled={writingBrief} onClick={() => void writeBrief(selectedDay)}>
+                    {writingBrief ? "Regenerating…" : "Regenerate"}
+                  </Button>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -592,37 +728,6 @@ export default function DashboardPage() {
               )}
             </CardContent>
           </Card>
-          <h2 className="font-heading text-xl tracking-tight">Athletes runs today</h2>
-          {shiftDay(selectedDay, -parseDay(selectedDay).getDay()) !== dashboard.week_start ? (
-            <p className="text-sm text-muted-foreground">Loading {dayLabel(selectedDay)}…</p>
-          ) : rowsForDay(dashboard, selectedDay).length === 0 ? (
-            <p className="text-sm text-muted-foreground">No runs stored for {dayLabel(selectedDay)}.</p>
-          ) : (
-            <>
-            <div className="space-y-3">
-            {rowsForDay(dashboard, selectedDay).map((row) => (
-              <DayCard
-                key={row.key}
-                row={row}
-                today={dashboard.today}
-                onAnalyze={(activity) => {
-                  setAnalysisId(activity.garmin_activity_id);
-                  setAnalysisError(null);
-                  if (!activity.analysis_summary) void runAnalysis(activity.garmin_activity_id);
-                }}
-              />
-            ))}
-            </div>
-            <AnalysisModal
-              activity={dashboard.recent_activities.find((item) => item.garmin_activity_id === analysisId) ?? null}
-              athleteName={rowsForDay(dashboard, selectedDay).find((row) => row.activity?.garmin_activity_id === analysisId)?.athleteName ?? null}
-              busy={analyzingId !== null && analyzingId === analysisId}
-              error={analysisError}
-              onClose={() => setAnalysisId(null)}
-              onRun={(garminActivityId) => void runAnalysis(garminActivityId)}
-            />
-            </>
-          )}
         </>
       ) : null}
     </div>

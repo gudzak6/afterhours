@@ -49,6 +49,7 @@ export function MileageHistory({ chart }: { chart: MileageChart }) {
   const router = useRouter();
   const [view, setView] = useState<"weeks" | "runs">("weeks");
   const weekPoints = chart.weeks.map((week, index) => ({
+    id: week.week_start,
     label: monthTick(week.week_start, index === 0 ? null : chart.weeks[index - 1].week_start),
     miles: week.distance_miles ?? 0,
     current: week.current,
@@ -56,6 +57,7 @@ export function MileageHistory({ chart }: { chart: MileageChart }) {
     garminId: null as number | null,
   }));
   const runPoints = chart.runs.map((run) => ({
+    id: `run-${run.garmin_activity_id}`,
     label: runTick(run.start_time_local),
     miles: run.distance_miles ?? 0,
     current: true,
@@ -106,13 +108,32 @@ export function MileageHistory({ chart }: { chart: MileageChart }) {
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={points} barCategoryGap={view === "weeks" ? "20%" : "30%"}>
               <CartesianGrid vertical={false} stroke="oklch(0.88 0.02 80)" />
-              <XAxis dataKey="label" tickLine={false} axisLine={false} interval={0} tick={{ fontSize: 11 }} />
+              <XAxis
+                dataKey="id"
+                tickLine={false}
+                axisLine={false}
+                interval={0}
+                tick={(tick) => {
+                  const label = points[tick.index]?.label ?? "";
+                  if (!label) return <g />;
+                  return (
+                    <text x={tick.x} y={tick.y} dy={12} textAnchor="middle" fontSize={11} fill="currentColor">
+                      {label}
+                    </text>
+                  );
+                }}
+              />
               <YAxis tickLine={false} axisLine={false} width={36} domain={[0, "auto"]} tick={{ fontSize: 11 }} />
               <Tooltip
-                formatter={(value) => [`${Number(value).toFixed(1)} mi`, "Distance"]}
-                labelFormatter={(_label, payload) => {
-                  const detail = payload?.[0]?.payload?.detail;
-                  return typeof detail === "string" ? detail : "";
+                content={({ active, payload }) => {
+                  const point = payload?.[0]?.payload as { detail?: string; miles?: number } | undefined;
+                  if (!active || !point || typeof point.miles !== "number") return null;
+                  return (
+                    <div className="rounded-md border border-border bg-card px-3 py-2 text-sm shadow-sm">
+                      <p>{point.detail}</p>
+                      <p>Distance: {point.miles.toFixed(1)} mi</p>
+                    </div>
+                  );
                 }}
               />
               <Bar

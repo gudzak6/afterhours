@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: trainingcoach-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install .
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GARMIN_PERSONAL_API_KEY
+        sync: false
+      - key: GARMIN_SYNC_INTERVAL_MINUTES
+        value: "360"

@@ -6,6 +6,19 @@ import { AthleteName } from "@/components/athlete-name";
 import { Button } from "@/components/ui/button";
 import { deleteAthlete, errorMessage, getDashboard, type CoachDashboard } from "@/lib/api";
 
+function GarminSignal({ status }: { status: string }) {
+  const connected = status === "connected";
+  const pending = status === "pending";
+  const label = connected ? "Connected" : pending ? "Signing in" : "Not connected";
+  const dot = connected ? "bg-emerald-500" : pending ? "bg-amber-500" : "bg-foreground/25";
+  return (
+    <span className="inline-flex items-center gap-2" title="Garmin Connect">
+      <span className={`size-2 shrink-0 rounded-full ${dot}`} aria-hidden />
+      <span>{label}</span>
+    </span>
+  );
+}
+
 export default function AthletesPage() {
   const [dashboard, setDashboard] = useState<CoachDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +84,7 @@ export default function AthletesPage() {
                   <AthleteName name={athlete.display_name} />
                 </Link>
                 <p className="text-sm text-muted-foreground">{coachName}</p>
+                <GarminSignal status={athlete.garmin_status} />
                 <Button
                   type="button"
                   size="sm"
@@ -88,6 +102,7 @@ export default function AthletesPage() {
               <thead className="text-xs tracking-wide text-muted-foreground uppercase">
                 <tr className="border-b border-border">
                   <th className="px-4 py-3 font-medium">Athlete</th>
+                  <th className="px-4 py-3 font-medium">Garmin</th>
                   <th className="px-4 py-3 font-medium">Coach</th>
                   <th className="px-4 py-3 text-right font-medium">Remove</th>
                 </tr>
@@ -99,6 +114,9 @@ export default function AthletesPage() {
                       <Link href={`/athletes/${athlete.id}`} className="font-medium hover:underline">
                         <AthleteName name={athlete.display_name} />
                       </Link>
+                    </td>
+                    <td className="px-4 py-3">
+                      <GarminSignal status={athlete.garmin_status} />
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{coachName}</td>
                     <td className="px-4 py-3 text-right">

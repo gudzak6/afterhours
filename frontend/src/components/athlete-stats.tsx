@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import { errorMessage, saveBestEffort, type RunningStats } from "@/lib/api";
 
@@ -112,13 +111,7 @@ function EffortTime({
   const time = effortLabel(effort.duration_seconds);
   return (
     <span className="flex items-center gap-2">
-      {effort.garmin_activity_id != null && effort.duration_seconds != null ? (
-        <Link href={`/activities/${effort.garmin_activity_id}`} className="font-medium text-primary hover:underline">
-          {time}
-        </Link>
-      ) : (
-        <span className={effort.duration_seconds == null ? "text-muted-foreground" : "font-medium"}>{effort.duration_seconds == null ? "—" : time}</span>
-      )}
+      <span className={effort.duration_seconds == null ? "text-muted-foreground" : "font-medium"}>{effort.duration_seconds == null ? "—" : time}</span>
       <button
         type="button"
         className="inline-flex min-h-11 items-center px-2 text-sm text-muted-foreground underline"

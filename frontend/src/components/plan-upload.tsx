@@ -15,7 +15,7 @@ export function PlanUpload() {
   const [request, setRequest] = useState("");
   const [fileKey, setFileKey] = useState(0);
   const fileInput = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState<"file" | "generate" | null>(null);
+  const [busy, setBusy] = useState<"file" | "generate" | "saved" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ProgramImportResult | null>(null);
 
@@ -66,6 +66,28 @@ export function PlanUpload() {
       setRequest("");
     } catch (generateError) {
       setError(errorMessage(generateError));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onApplySaved() {
+    if (!athleteId || busy) return;
+    setBusy("saved");
+    setError(null);
+    setResult(null);
+    try {
+      const response = await fetch(SAVED_PROGRAM.href);
+      if (!response.ok) throw new Error("The Flight School plan could not be loaded.");
+      const content_base64 = bytesToBase64(new Uint8Array(await response.arrayBuffer()));
+      const imported = await importTrainingProgram(athleteId, {
+        filename: SAVED_PROGRAM.filename,
+        content_base64,
+        start_date: startDate,
+      });
+      setResult(imported);
+    } catch (applyError) {
+      setError(errorMessage(applyError));
     } finally {
       setBusy(null);
     }
@@ -133,6 +155,13 @@ export function PlanUpload() {
             {busy === "file" ? "Reading the program…" : "Update plan"}
           </Button>
           <div className="space-y-2 border-t border-border pt-3">
+            <p className="text-sm font-medium">{SAVED_PROGRAM.name}</p>
+            <p className="text-sm text-muted-foreground">{SAVED_PROGRAM.detail}</p>
+            <Button type="button" variant="outline" className="min-h-11" disabled={busy !== null || !athleteId} onClick={() => void onApplySaved()}>
+              {busy === "saved" ? "Applying the plan…" : `Apply to ${athlete?.display_name ?? "athlete"}`}
+            </Button>
+          </div>
+          <div className="space-y-2 border-t border-border pt-3">
             <label className="block text-sm">
               <span className="text-muted-foreground">Or ask for a plan</span>
               <textarea
@@ -170,6 +199,22 @@ export function PlanUpload() {
       </CardContent>
     </Card>
   );
+}
+
+const SAVED_PROGRAM = {
+  name: "Flight School NYCM 50–60 mpw",
+  href: "/plans/flight-school-nycm-50-60.xlsx",
+  filename: "Flight School_NYCM_50-60mpw.xlsx",
+  detail: "The weekly mileage and workouts through the New York City Marathon. Apply uses the athlete and start date above, and the weeks shift so the first workout lands on that day.",
+};
+
+function bytesToBase64(bytes: Uint8Array) {
+  let binary = "";
+  const size = 0x8000;
+  for (let index = 0; index < bytes.length; index += size) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + size));
+  }
+  return btoa(binary);
 }
 
 function nextMonday() {

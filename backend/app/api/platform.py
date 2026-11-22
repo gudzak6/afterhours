@@ -633,6 +633,67 @@ def remove_athlete(
     delete_athlete(db, _owned(db, settings, athlete_id))
 
 
+def _status_card(db: Session, athlete: Athlete, activities: list[Activity], today: date, now: datetime) -> RosterAthlete:
+    """Status for one athlete. The roster page builds the same card for everyone."""
+    goal = db.scalar(select(TrainingGoal).where(TrainingGoal.athlete_id == athlete.id))
+    connection = db.scalar(select(GarminConnection).where(GarminConnection.athlete_id == athlete.id))
+    activity_days = {
+        activity.start_time_local[:10]
+        for activity in activities
+        if activity.start_time_local and len(activity.start_time_local) >= 10
+    }
+    plan_view = _plan_view(db, athlete.id, today)
+    missed = sum(week["confirmed_missed"] for week in plan_view["weeks"])
+    adherence_notes = [note["note"] for note in plan_view["adherence_notes"] if note["kind"] in {"shortfall", "missed", "partial"}]
+    latest = next((activity for activity in activities if activity.start_time_utc is not None), None)
+    analysis = None
+    if latest is not None:
+        analysis = db.scalar(
+            select(WorkoutAnalysis)
+            .where(WorkoutAnalysis.activity_id == latest.id, WorkoutAnalysis.status == "ready")
+            .order_by(WorkoutAnalysis.id.desc())
+        )
+    report = {} if analysis is None or not isinstance(analysis.report, dict) else analysis.report
+    effort = report.get("effort_level") if isinstance(report.get("effort_level"), str) else None
+    goal_status = report.get("goal_progress_status") if isinstance(report.get("goal_progress_status"), str) else None
+    reasons = attention_reasons(
+        last_activity_at=None if latest is None else latest.start_time_utc,
+        now=now,
+        missed_planned_sessions=missed,
+        latest_effort=effort,
+        latest_goal_status=goal_status,
+    )
+    reasons.extend(note for note in adherence_notes if note not in reasons)
+    status = training_status(reasons, has_activities=bool(activities), goal_status=goal_status)
+    week = weekly_mileage(activities, now=now)
+    current_week = None if not week else week[-1]["distance_miles"]
+    recent_label = None
+    if latest is not None:
+        miles = None if latest.distance_meters is None else round(latest.distance_meters / 1609.344, 2)
+        recent_label = latest.name or latest.activity_type_key or "Activity"
+        if miles is not None:
+            recent_label = f"{recent_label} · {miles} mi"
+    return RosterAthlete(
+        id=athlete.id,
+        display_name=athlete.display_name,
+        race_goal=None if goal is None else goal.primary_race_goal,
+        target_time=athlete.target_time,
+        weekly_miles=current_week,
+        recent_activity=recent_label,
+        recent_activity_id=None if latest is None else latest.garmin_activity_id,
+        recent_activity_at=None if latest is None else latest.start_time_local,
+        training_status=status,
+        attention_reasons=reasons,
+        garmin_status="not_connected" if connection is None else connection.status,
+        ran_today=today.isoformat() in activity_days,
+        planned_weekly_miles=None if plan_view["current_week"] is None else plan_view["current_week"]["planned_miles"],
+        workouts_completed=0 if plan_view["current_week"] is None else plan_view["current_week"]["completed_workouts"],
+        workouts_scheduled=0 if plan_view["current_week"] is None else plan_view["current_week"]["planned_workouts"],
+        workouts_still_scheduled=0 if plan_view["current_week"] is None else plan_view["current_week"]["still_scheduled"],
+        key_workout_status=plan_view["key_workout_status"],
+    )
+
+
 @router.get("/api/athletes/{athlete_id}/overview")
 def athlete_overview(
     athlete_id: int,
@@ -640,21 +701,28 @@ def athlete_overview(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     athlete = _owned(db, settings, athlete_id)
-    coach, rows, _facts = _roster(db, settings)
-    card = next((row for row in rows if row.id == athlete.id), None)
-    activities = list(db.scalars(select(Activity).where(Activity.athlete_id == athlete.id)).all())
+    coach = ensure_coach(db, settings)
+    activities = list(
+        db.scalars(
+            select(Activity)
+            .where(Activity.athlete_id == athlete.id)
+            .order_by(Activity.start_time_utc.is_(None), Activity.start_time_utc.desc())
+        ).all()
+    )
+    now = datetime.now(UTC)
     today = datetime.now(ZoneInfo(coach.timezone or "America/New_York")).date()
-    classifications = _classification_map(db, [activity.id for activity in activities])
+    card = _status_card(db, athlete, activities, today, now)
     recent = sorted(
         [activity for activity in activities if activity.start_time_utc is not None],
         key=lambda activity: as_utc(activity.start_time_utc),
         reverse=True,
     )[:6]
+    classifications = _classification_map(db, [activity.id for activity in recent])
     goals = goals_payload(db, athlete)
     return {
         "athlete": _athlete_out(db, athlete, settings).model_dump(mode="json"),
-        "status": None if card is None else card.model_dump(),
-        "weekly_mileage": weekly_mileage(activities, now=datetime.now(UTC)),
+        "status": card.model_dump(),
+        "weekly_mileage": weekly_mileage(activities, now=now),
         "mileage_chart": mileage_chart(activities, today=today),
         "running_stats": running_stats(db, activities, today=today, athlete_id=athlete.id),
         "goal": {

@@ -48,7 +48,7 @@ function Assessment({ report }: { report: Record<string, unknown> }) {
       ) : null}
       {focus.length > 0 ? (
         <div className="border-l-4 border-amber-500 pl-4">
-          <p className="font-semibold text-amber-800">Where to Focus</p>
+          <p className="font-semibold text-amber-800">What to check</p>
           <p className="mt-1 leading-6">{paragraph(focus)}</p>
         </div>
       ) : null}

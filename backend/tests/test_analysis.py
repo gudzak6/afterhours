@@ -171,7 +171,7 @@ def test_report_schema_rejects_an_empty_focus_list() -> None:
 def test_easy_run_summary_keeps_the_written_analysis() -> None:
     from app.coach.engine import present_report
 
-    summary = "You completed 8.12 miles at an average pace of 8:00 per mile, longer than the planned 5.0 miles."
+    summary = "Joey ran 8.12 miles at 8:00 per mile, longer than the planned 5.0 miles. Check whether that extra distance still leaves the next quality day intact."
     shown = present_report(
         {
             "summary": summary,

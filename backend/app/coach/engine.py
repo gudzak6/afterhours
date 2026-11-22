@@ -61,10 +61,10 @@ If the roster has one athlete, that is who the question is about. If a name matc
 When a saved analysis is present, you may use it as an earlier interpretation and say so. Measured pace, distance, and heart rate come from the activity tools.
 """
 
-REPORT_PROMPT = """You write an activity analysis spoken to the athlete who did the run.
-Address the athlete as "you". Do not open with the athlete's name, and do not write "the athlete".
+REPORT_PROMPT = """You write an activity analysis for the coach who is reading it, about one athlete on the roster.
+The reader is the coach, not the athlete. Use athlete_profile.display_name and refer to the athlete by that name. Do not address the athlete as "you". Do not write instructions the athlete would follow.
 Be specific. Use the measurements in the context. Do not be generic or motivational. Do not use the words optimize, enhance, or maximize.
-An easy run, a recovery run, and a workout all use the same four sections. An easy run is still a full analysis, not a one-sentence note.
+An easy run, a recovery run, and a workout all use the same sections. An easy run is still a full analysis, not a one-sentence note.
 
 Use only numbers, history, goals, and thresholds present in the context. Do not invent splits, sensors, lactate thresholds, race results, heart-rate zones, or a fitness prediction.
 If a heart-rate zone name is not in the context, give the heart rate in bpm and do not name a zone.
@@ -80,15 +80,16 @@ athlete_profile, comparable_activities, and recent_training are saved profile fi
 When athlete_profile.intake is present, quote a race time only when that race is listed.
 prior_interpretations are earlier model text, not measurements. Do not treat an earlier conclusion as a fact.
 Set goal_progress_status to on_track, building, or needs_attention only when the supplied measurements support it. Otherwise use insufficient_evidence.
-where_to_focus does not change the training plan.
+Nothing in this report changes the training plan. Tell the coach what to review. Do not tell the athlete what to do.
+How a run felt is the athlete's sensation, not a command. Write "Check that easy running still feels normal before keeping the faster work." Do not write "Keep easy running feeling normal."
 
 Write:
-- summary: one paragraph of 3 to 5 sentences. Distance, average pace, how it compared with the stored plan when one is present, heart rate when it is stored, and the pace range when laps are stored.
-- training_impact: one paragraph of 2 to 3 sentences on what this recorded session does, such as recovery, aerobic volume, or the quality the workout was for.
-- fitness_indicators: one sentence on what the recording can and cannot say about fitness.
-- what_went_well: 2 to 3 sentences about one recorded strength, each tied to a number in the context.
-- where_to_focus: 2 to 3 sentences about one recorded point to watch, each tied to a number in the context. If nothing is off, say what to carry into the next stored session.
-- goal_progress: one sentence. If the goal or the comparable evidence is missing, say so.
+- summary: one paragraph of 3 to 5 sentences for the coach. Name the athlete. Include distance, average pace, how it compared with the stored plan when one is present, heart rate when it is stored, and the pace range when laps are stored.
+- training_impact: one paragraph of 2 to 3 sentences on what this recorded session does for this athlete, such as recovery, aerobic volume, or the quality the workout was for.
+- fitness_indicators: one sentence on what the recording can and cannot tell the coach about fitness.
+- what_went_well: 2 to 3 sentences about one recorded strength, each tied to a number in the context. State the observation. Do not praise the athlete in the second person.
+- where_to_focus: 2 to 3 sentences telling the coach what to check or decide, each tied to a number in the context. If nothing is off, say what the coach should confirm before the next stored session.
+- goal_progress: one sentence for the coach. If the goal or the comparable evidence is missing, say so.
 """
 
 REPORT_JSON_SCHEMA = {
@@ -916,9 +917,9 @@ def generate_report(session: Session, settings: Settings, athlete: Athlete, acti
     workout_type = (context.get("current_activity") or {}).get("activity", {}).get("workout_type")
     kind = session_kind(workout_type if isinstance(workout_type, str) else None)
     length_note = (
-        "This stored session is an easy or recovery run. Write the same four sections. Summarize mile laps as a range when they are stored, and do not turn the run into a repetition workout."
+        "This stored session is an easy or recovery run. Write for the coach, using the athlete's name. Summarize mile laps as a range when they are stored, and do not turn the run into a repetition workout."
         if kind == "easy"
-        else "This stored session is a workout. Write the same four sections, and include the calculated structure and elevation when those fields are present."
+        else "This stored session is a workout. Write for the coach, using the athlete's name, and include the calculated structure and elevation when those fields are present."
     )
     client = _client(settings)
     messages = [

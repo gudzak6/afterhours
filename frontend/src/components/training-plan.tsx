@@ -230,27 +230,6 @@ export function TrainingPlan({ athleteId }: { athleteId: number }) {
         </div>
       ) : null}
 
-      {selected ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Week of {selected.week_start}</CardTitle>
-            <CardDescription>
-              {selected.in_progress
-                ? `${selected.completed_workouts} completed so far, ${selected.still_scheduled} still scheduled.`
-                : `${selected.completed_workouts} of ${selected.planned_workouts} workouts completed.`}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-2 text-sm sm:grid-cols-2">
-            <p>Planned mileage: {selected.planned_miles == null ? "—" : `${selected.planned_miles.toFixed(1)} mi`}</p>
-            <p>Actual mileage: {selected.actual_miles == null ? "—" : `${selected.actual_miles.toFixed(1)} mi`}</p>
-            <p>Variance: {selected.variance_miles == null ? "Not calculated" : `${selected.variance_miles.toFixed(1)} mi (${selected.variance_percent?.toFixed(0)}%)`}</p>
-            <p>Quality sessions: {selected.completed_quality} completed, {selected.partial_quality} partial, of {selected.planned_quality}</p>
-            <p>Long run: {selected.planned_long_run_miles == null ? "—" : `${selected.planned_long_run_miles.toFixed(1)} planned`}{selected.actual_long_run_miles == null ? "" : ` · ${selected.actual_long_run_miles.toFixed(1)} actual`}</p>
-            <p>Unmatched {selected.unmatched} · Confirmed missed {selected.confirmed_missed}</p>
-          </CardContent>
-        </Card>
-      ) : null}
-
       {selectedDay && dayWorkouts.length === 0 ? <p className="text-sm text-muted-foreground">No workout is scheduled for {dayLabel(selectedDay)}.</p> : null}
       <ul className="space-y-3">
         {dayWorkouts.map((workout) => (
