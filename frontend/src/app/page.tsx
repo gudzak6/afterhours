@@ -1,18 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, BellOff, Calendar, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleCheck, Info, RefreshCw, Sparkles } from "lucide-react";
+import { Calendar, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleCheck, Info, RefreshCw, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { AthleteName } from "@/components/athlete-name";
-import { Button } from "@/components/ui/button";
 import { mirrorRosterRuns } from "@/lib/account";
 import {
   activityPath,
-  createBrief,
   errorMessage,
+  getCoachReview,
   getDashboard,
   syncRoster,
-  updateCoach,
   type CoachDashboard,
 } from "@/lib/api";
 
@@ -46,151 +44,6 @@ const FULL_WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "
 function fullDayLabel(iso: string): string {
   const date = parseDay(iso);
   return `${FULL_WEEKDAYS[date.getDay()]}, ${MONTHS[date.getMonth()]} ${date.getDate()}`;
-}
-
-const LATER_BRIEF_SECTIONS = [
-  "Priority Athlete Findings",
-  "Positive Training Developments",
-  "Upcoming Training Considerations",
-  "Data Limitations",
-];
-
-function athleteClauses(sentence: string, hits: string[]) {
-  const placed = hits
-    .map((name) => ({ name, index: sentence.toLowerCase().indexOf(name.toLowerCase()) }))
-    .filter((item) => item.index >= 0)
-    .sort((a, b) => a.index - b.index);
-  if (placed.length < 2) return placed.map((item) => ({ name: item.name, text: sentence }));
-  return placed.map((item, index) => {
-    const end = index + 1 < placed.length ? placed[index + 1].index : sentence.length;
-    const text = sentence
-      .slice(item.index, end)
-      .replace(/\s+and\s*$/i, "")
-      .replace(/,\s*$/, "")
-      .trim();
-    return { name: item.name, text };
-  });
-}
-
-function executiveAssessment(summary: string, athleteNames: string[]) {
-  const marker = "Executive Coaching Assessment";
-  const start = summary.indexOf(marker);
-  if (start === -1) return null;
-  let body = summary.slice(start + marker.length).trim();
-  let cut = body.length;
-  for (const heading of LATER_BRIEF_SECTIONS) {
-    const index = body.indexOf(heading);
-    if (index >= 0 && index < cut) cut = index;
-  }
-  body = body.slice(0, cut).trim();
-  const lines = body.split(/\n+/).map((line) => line.trim()).filter(Boolean);
-  const explicit = lines.filter((line) => /^[-•*]\s+/.test(line));
-  if (explicit.length > 0) {
-    return {
-      intro: lines.filter((line) => !/^[-•*]\s+/.test(line)).join(" "),
-      bullets: explicit.map((line) => line.replace(/^[-•*]\s+/, "")),
-    };
-  }
-  const names = athleteNames.filter((name) => name && name.toLowerCase() !== "athlete").sort((a, b) => b.length - a.length);
-  const sentences = body.split(/(?<=[.!?])\s+/).map((sentence) => sentence.trim()).filter(Boolean);
-  const intro: string[] = [];
-  const closing: string[] = [];
-  const own = new Map<string, string[]>();
-  let seenAthlete = false;
-  for (const sentence of sentences) {
-    const hits = names.filter((name) => sentence.toLowerCase().includes(name.toLowerCase()));
-    if (hits.length === 0) {
-      (seenAthlete ? closing : intro).push(sentence);
-      continue;
-    }
-    seenAthlete = true;
-    const pieces = athleteClauses(sentence, hits);
-    for (const piece of pieces) {
-      const list = own.get(piece.name) ?? [];
-      list.push(piece.text);
-      own.set(piece.name, list);
-    }
-  }
-  const bullets = names
-    .filter((name) => own.has(name))
-    .map((name) => {
-      const text = [
-        ...(own.get(name) ?? []).map((part) => (/[.!?]$/.test(part) ? part : `${part}.`)),
-        ...closing,
-      ].join(" ");
-      return text.toLowerCase().startsWith(name.toLowerCase()) ? text : `${name}: ${text}`;
-    });
-  if (bullets.length === 0) return { intro: body, bullets: [] as string[] };
-  return { intro: intro.join(" "), bullets };
-}
-
-const PREVIEW_HEADINGS = [
-  "Workout Purpose",
-  "Athlete-Specific Rationale",
-  "Execution Guidance",
-  "Success Criteria",
-  "Coach Watchpoints",
-  "Training Context",
-];
-
-function firstSentence(text: string) {
-  const match = text.match(/^.*?[.!?](?:\s|$)/);
-  return (match ? match[0] : text).trim();
-}
-
-function shortenPreview(summary: string) {
-  if (!summary.includes("Workout Purpose:")) return null;
-  const notes: Array<{ name: string; purpose: string; watch: string }> = [];
-  let current: { name: string; purpose: string; watch: string } | null = null;
-  for (const chunk of summary.split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean)) {
-    const heading = PREVIEW_HEADINGS.find((label) => chunk.startsWith(`${label}:`));
-    if (!heading) {
-      if (!chunk.includes(":")) {
-        current = { name: chunk, purpose: "", watch: "" };
-        notes.push(current);
-      }
-      continue;
-    }
-    if (!current) continue;
-    const body = chunk.slice(heading.length + 1).trim();
-    if (heading === "Workout Purpose") current.purpose = firstSentence(body);
-    if (heading === "Coach Watchpoints") current.watch = firstSentence(body);
-  }
-  return notes.some((note) => note.purpose || note.watch) ? notes : null;
-}
-
-function BriefAssessment({ summary, athleteNames }: { summary: string; athleteNames: string[] }) {
-  const preview = shortenPreview(summary);
-  if (preview) {
-    return (
-      <ul className="max-w-3xl space-y-3 text-sm leading-6">
-        {preview.map((note) => (
-          <li key={note.name}>
-            <p className="font-medium">{note.name}</p>
-            {note.purpose ? <p>{note.purpose}</p> : null}
-            {note.watch ? <p className="text-muted-foreground">{note.watch}</p> : null}
-          </li>
-        ))}
-      </ul>
-    );
-  }
-  const assessment = executiveAssessment(summary, athleteNames);
-  if (!assessment) {
-    return <p className="max-w-3xl text-sm leading-6 whitespace-pre-line">{summary}</p>;
-  }
-  return (
-    <div className="max-w-3xl space-y-2 text-sm leading-6">
-      <p className="font-medium">Executive Coaching Assessment</p>
-      {assessment.intro ? <p>{assessment.intro}</p> : null}
-      {assessment.bullets.length > 0 ? (
-        <ul className="list-disc space-y-2 pl-5">
-          {assessment.bullets.map((bullet) => (
-            <li key={bullet}>{bullet}</li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  );
 }
 
 type DashboardActivity = CoachDashboard["recent_activities"][number];
@@ -272,22 +125,72 @@ function completedLine(activity: DashboardActivity) {
   return pace === "—" ? distance : `${distance} · ${pace}`;
 }
 
-function reviewLine(count: number) {
-  if (count === 0) return "No activity recorded yet.";
-  if (count === 1) return "One activity recorded. Open the athlete detail for the full coaching assessment.";
-  const words = ["Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"];
-  const label = words[count - 2] ?? String(count);
-  const together = count === 2 ? "both" : "them";
-  return `${label} activities recorded. Review ${together} together for the day's coaching assessment.`;
+function CoachReview({ athleteId, day }: { athleteId: number; day: string }) {
+  const key = `${athleteId}:${day}`;
+  const [attempt, setAttempt] = useState(0);
+  const [state, setState] = useState<{ key: string; status: "loading" | "ready" | "error"; paragraph: string; error: string } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setState({ key, status: "loading", paragraph: "", error: "" });
+    getCoachReview(athleteId, day).then(
+      (result) => {
+        if (!cancelled) setState({ key, status: "ready", paragraph: result.paragraph, error: "" });
+      },
+      (loadError) => {
+        if (!cancelled) setState({ key, status: "error", paragraph: "", error: errorMessage(loadError) });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [athleteId, day, attempt, key]);
+
+  const current = state?.key === key ? state : null;
+  return (
+    <div>
+      <div className="flex items-center gap-1 text-sm font-medium">
+        <Sparkles className="size-3.5" />
+        Coach&apos;s review
+        <span className="group/info relative">
+          <button
+            type="button"
+            className="rounded-full p-1 text-muted-foreground"
+            aria-label="AI-generated coaching assessment based on the athlete's planned workout, completed activity, and recent training."
+            onClick={(event) => event.stopPropagation()}
+          >
+            <Info className="size-4" />
+          </button>
+          <p className="pointer-events-none absolute top-full left-0 z-10 mt-2 hidden w-64 border border-foreground/20 bg-background px-3 py-2 text-[11px] leading-snug text-foreground normal-case group-hover/info:block group-focus-within/info:block">
+            AI-generated coaching assessment based on the athlete&apos;s planned workout, completed activity, and recent training.
+          </p>
+        </span>
+      </div>
+      {current?.status === "error" ? (
+        <p className="mt-1 text-sm text-muted-foreground">
+          {current.error}{" "}
+          <button type="button" className="underline" onClick={() => setAttempt((value) => value + 1)}>
+            Try again
+          </button>
+        </p>
+      ) : (
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+          {current?.status === "ready" ? current.paragraph : "Writing Coach's review…"}
+        </p>
+      )}
+    </div>
+  );
 }
 
 function AthletePanel({
   group,
+  day,
   open,
   onToggle,
   planHref,
 }: {
   group: AthleteDay;
+  day: string;
   open: boolean;
   onToggle: () => void;
   planHref: string | null;
@@ -378,13 +281,7 @@ function AthletePanel({
               ))}
             </div>
           </div>
-          <div>
-            <p className="flex items-center gap-2 text-sm font-medium">
-              <Sparkles className="size-3.5" />
-              Coach&apos;s review
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">{reviewLine(group.activities.length)}</p>
-          </div>
+          <CoachReview athleteId={group.athleteId} day={day} />
         </div>
       ) : null}
     </article>
@@ -537,10 +434,7 @@ export default function DashboardPage() {
   const [openAthletes, setOpenAthletes] = useState<number[]>([]);
   const [reloading, setReloading] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [writingBrief, setWritingBrief] = useState(false);
   const requestId = useRef(0);
-  const viewedDay = useRef<string | null>(null);
-  viewedDay.current = selectedDay;
 
   const load = useCallback(async (day?: string) => {
     const id = requestId.current + 1;
@@ -580,45 +474,6 @@ export default function DashboardPage() {
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  const writeBrief = useCallback(async (day: string) => {
-    setWritingBrief(true);
-    setNotice(null);
-    try {
-      const result = await createBrief(day);
-      if (viewedDay.current !== day) return;
-      if (!result.report) {
-        setNotice("A brief is written from the coaching server. This page keeps the roster and the runs already saved.");
-        return;
-      }
-      setDashboard((current) =>
-        current ? { ...current, brief: result.report, brief_created_at: result.created_at } : current,
-      );
-    } catch (briefError) {
-      if (viewedDay.current !== day) return;
-      const message = errorMessage(briefError);
-      setNotice(
-        /not connected|did not return|not found/i.test(message)
-          ? "A brief is written from the coaching server. This page keeps the roster and the runs already saved."
-          : message,
-      );
-    } finally {
-      setWritingBrief(false);
-    }
-  }, []);
-
-  async function toggleEmail() {
-    if (!dashboard) return;
-    const enabled = !dashboard.coach.email_notifications_enabled;
-    setNotice(null);
-    try {
-      const coach = await updateCoach({ email_notifications_enabled: enabled });
-      setDashboard({ ...dashboard, coach });
-      setNotice(enabled ? "Daily email is on. One brief is sent at 7:00 in your timezone." : "Daily email is off. The brief stays on this page.");
-    } catch (toggleError) {
-      setNotice(errorMessage(toggleError));
-    }
-  }
-
   const groups = dashboard && selectedDay ? athletesForDay(dashboard, selectedDay) : [];
   const roster = dashboard?.athletes ?? [];
   const athleteFilter = roster.some((athlete) => athlete.id === selectedAthlete) ? selectedAthlete : "all";
@@ -631,6 +486,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-4">
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      {notice ? <p className="text-sm text-muted-foreground">{notice}</p> : null}
       {!dashboard && !error ? <p className="text-sm text-muted-foreground">Loading the roster…</p> : null}
 
       {dashboard && selectedDay ? (
@@ -681,6 +537,7 @@ export default function DashboardPage() {
                       <AthletePanel
                         key={group.athleteId}
                         group={group}
+                        day={selectedDay}
                         planHref={selectedDay > dashboard.today && group.planned.length > 0 ? `/athletes/${group.athleteId}?section=plan&day=${selectedDay}` : null}
                         open={openAthletes.includes(group.athleteId)}
                         onToggle={() =>
@@ -695,80 +552,6 @@ export default function DashboardPage() {
               </>
             )}
           </TrainingSchedule>
-          <details className="group rounded-xl border border-border bg-card">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden">
-              <span className="flex items-center gap-2">
-                <span className="font-heading text-xl tracking-tight">Coaching summary</span>
-                <span className="group/info relative">
-                  <button
-                    type="button"
-                    className="rounded-full p-1 text-muted-foreground"
-                    aria-label="summary of all athletes workouts for the day"
-                    onClick={(event) => event.preventDefault()}
-                  >
-                    <Info className="size-4" />
-                  </button>
-                  <p className="pointer-events-none absolute top-full left-0 z-10 mt-2 hidden w-52 border border-foreground/20 bg-background px-3 py-2 text-[11px] leading-snug text-foreground group-hover/info:block group-focus-within/info:block">
-                    summary of all athletes workouts for the day
-                  </p>
-                </span>
-              </span>
-              <span className="flex items-center gap-2">
-                <span className="group/bell relative">
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      void toggleEmail();
-                    }}
-                    className={`rounded-full border p-2 ${
-                      dashboard.coach.email_notifications_enabled
-                        ? "border-emerald-300 bg-emerald-50 text-emerald-900"
-                        : "border-border text-muted-foreground"
-                    }`}
-                    aria-label="Add email and text notifications coming soon"
-                  >
-                    {dashboard.coach.email_notifications_enabled ? <Bell className="size-4" /> : <BellOff className="size-4" />}
-                  </button>
-                  <p className="pointer-events-none absolute top-full right-0 z-10 mt-2 hidden w-44 border border-foreground/20 bg-background px-3 py-2 text-right text-[11px] leading-snug tracking-[0.08em] text-foreground uppercase group-hover/bell:block group-focus-within/bell:block">
-                    Add email and text notifications coming soon
-                  </p>
-                </span>
-                <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
-              </span>
-            </summary>
-            <div className="space-y-4 border-t border-border px-4 py-4">
-              {notice ? <p className="text-sm text-muted-foreground">{notice}</p> : null}
-              {writingBrief && !dashboard.brief ? (
-                <p className="text-sm text-muted-foreground">Writing the coaching brief for {dayLabel(selectedDay)}…</p>
-              ) : dashboard.brief ? (
-                <div className="space-y-3">
-                  {selectedDay > dashboard.today ? (
-                    <p className="text-xs tracking-[0.14em] text-muted-foreground uppercase">Preview · this day has not been run</p>
-                  ) : null}
-                  <BriefAssessment
-                    summary={dashboard.brief.daily_summary}
-                    athleteNames={dashboard.athletes.map((athlete) => athlete.display_name)}
-                  />
-                  {writingBrief ? (
-                    <p className="text-sm text-muted-foreground">Writing a new coaching brief for {dayLabel(selectedDay)}…</p>
-                  ) : null}
-                  <Button type="button" variant="outline" className="min-h-11" disabled={writingBrief} onClick={() => void writeBrief(selectedDay)}>
-                    {writingBrief ? "Regenerating…" : "Regenerate"}
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <p className="text-sm text-muted-foreground">
-                    No coaching brief has been written for {dayLabel(selectedDay)}.
-                  </p>
-                  <Button type="button" variant="outline" disabled={writingBrief} onClick={() => void writeBrief(selectedDay)}>
-                    {writingBrief ? "Generating…" : "Generate coaching brief"}
-                  </Button>
-                </div>
-              )}
-            </div>
-          </details>
         </>
       ) : null}
     </div>

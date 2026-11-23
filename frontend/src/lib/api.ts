@@ -521,6 +521,11 @@ export function createBrief(day: string) {
   });
 }
 
+export function getCoachReview(athleteId: number, day: string) {
+  const query = new URLSearchParams({ athlete_id: String(athleteId), day });
+  return request<{ status: "ready" | "waiting"; paragraph: string; cached: boolean }>(`/api/coach/review?${query}`);
+}
+
 export function deleteAthlete(athleteId: number) {
   return request<void>(`/api/athletes/${athleteId}`, { method: "DELETE" });
 }

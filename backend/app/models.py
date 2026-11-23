@@ -129,6 +129,21 @@ class PlanRevision(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class CoachReview(Base):
+    """One stored paragraph for an athlete and day. A new analysis or plan replaces it."""
+
+    __tablename__ = "coach_reviews"
+    __table_args__ = (UniqueConstraint("athlete_id", "review_date", "source_key", name="uq_coach_reviews_source"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    athlete_id: Mapped[int] = mapped_column(ForeignKey("athletes.id"), nullable=False)
+    review_date: Mapped[date] = mapped_column(Date, nullable=False)
+    source_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    model: Mapped[str | None] = mapped_column(String(80))
+    paragraph: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class CoachingBrief(Base):
     __tablename__ = "coaching_briefs"
 

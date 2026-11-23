@@ -182,7 +182,7 @@ export default function AthletesPage() {
             </div>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">
               To add an athlete, they need to sign up and connect their device for tracking. Athlete can sign up{" "}
-              <Link href="/login?signup=1" className="text-foreground underline">here</Link>.
+              <Link href="/login?signup=1" className="text-foreground underline">here</Link>. Once an athlete is added, you will be able to apply their plan.
             </p>
           </div>
         </div>

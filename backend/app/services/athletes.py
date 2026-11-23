@@ -21,6 +21,7 @@ from app.models import (
     AthleteThreshold,
     GarminConnection,
     CoachMessage,
+    CoachReview,
     LactateReading,
     PlanRevision,
     Race,
@@ -56,7 +57,7 @@ def delete_athlete(session: Session, athlete: Athlete) -> None:
     if conversation_ids:
         session.execute(delete(AiMessage).where(AiMessage.conversation_id.in_(conversation_ids)))
         session.execute(delete(AiConversation).where(AiConversation.id.in_(conversation_ids)))
-    for model in (WorkoutFeedback, WorkoutComment, CoachMessage, LactateReading, Race):
+    for model in (WorkoutFeedback, WorkoutComment, CoachMessage, CoachReview, LactateReading, Race):
         session.execute(delete(model).where(model.athlete_id == athlete.id))
     if activity_ids:
         session.execute(delete(WorkoutFeedback).where(WorkoutFeedback.activity_id.in_(activity_ids)))

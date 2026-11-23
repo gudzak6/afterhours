@@ -40,6 +40,7 @@ from app.services.adherence import (
 )
 from app.coach.engine import present_report
 from app.services.brief import brief_for_day, deliver_daily_brief, generate_brief
+from app.services.coach_review import review_for_athlete
 from app.services.efforts import running_stats, save_best_effort
 from app.services.history import mileage_chart, weekly_mileage
 from app.services.program import next_monday, workouts_from_program, workouts_from_request
@@ -609,6 +610,23 @@ def create_brief(
         status = 503 if code == "gemini_not_configured" else 502
         raise HTTPException(status_code=status, detail={"code": code, "message": "The coaching brief was not stored."}) from exc
     return {"status": brief.status, "created_at": brief.created_at.isoformat(), "report": brief.report}
+
+
+@router.get("/api/coach/review")
+def coach_review(
+    athlete_id: int,
+    day: date,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """One stored-analysis review for one athlete. This does not regenerate the detailed analysis."""
+    athlete = _owned(db, settings, athlete_id)
+    try:
+        return review_for_athlete(db, settings, athlete, day)
+    except RuntimeError as exc:
+        code = str(exc).split(":", 1)[0]
+        status_code = 503 if code == "gemini_not_configured" else 502
+        raise HTTPException(status_code=status_code, detail={"code": code, "message": "Coach's review was not written."}) from exc
 
 
 @router.post("/api/coach/athletes", response_model=AthleteOut)
