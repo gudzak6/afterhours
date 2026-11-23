@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
@@ -10,11 +11,12 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.coach.analysis import detected_type, run_coaching_analysis, surrounding_sessions
 from app.config import Settings
 from app.garmin.mapping import pace_seconds_per_mile
 from app.metrics.engine import activity_metrics
 from app.services.history import training_history
-from app.services.mileage import window_stats
+from app.services.mileage import as_utc, window_stats
 from app.models import (
     Activity,
     ActivityLap,
@@ -30,6 +32,8 @@ from app.models import (
     WorkoutClassification,
 )
 from app.security import redact_secrets
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You brief a knowledgeable competitive running coach.
 Use only numbers that appear in the tool results or the supplied context.
@@ -62,96 +66,50 @@ If the roster has one athlete, that is who the question is about. If a name matc
 When a saved analysis is present, you may use it as an earlier interpretation and say so. Measured pace, distance, and heart rate come from the activity tools.
 """
 
-REPORT_PROMPT = """You write an activity analysis for the coach who is reading it, about one athlete on the roster.
-The reader is the coach, not the athlete. Use athlete_profile.display_name and refer to the athlete by that name. Do not address the athlete as "you". Do not write instructions the athlete would follow.
-Be specific. Use the measurements in the context. Do not be generic or motivational. Do not use the words optimize, enhance, or maximize.
-An easy run, a recovery run, and a workout all use the same sections. An easy run is still a full analysis, not a one-sentence note.
-
-Use only numbers, history, goals, and thresholds present in the context. Do not invent splits, sensors, lactate thresholds, race results, heart-rate zones, or a fitness prediction.
-If a heart-rate zone name is not in the context, give the heart rate in bpm and do not name a zone.
-If planned_vs_actual is null, do not mention a planned distance, pace, or workout. Do not say a planned session was unavailable.
-When planned_vs_actual is present, those mileage, repetition, pace, and recovery differences were already calculated. Do not recompute them. Use the calculated summary. A difference is not automatically poor execution. Say whether the stored objective was met only from that execution.
-Mention another day, such as yesterday or tomorrow, only when that workout appears in the context. Do not invent the surrounding plan.
-On a workout, when metrics.workout_breakdown.label is present, that label and each repetition's pace were already calculated from the recording. Describe the session as that structure and quote those paces. Do not average different repetition distances into one pace, and do not describe a different session. metrics.repetitions can split one repetition across an automatic lap, so it is not the workout structure. On an easy or recovery run, do not describe a repetition workout. If mile laps are stored, summarize them as a pace range in one sentence. Do not list every mile.
-On a workout, when metrics.elevation_effect.available is true, quote the elevation note. Do not recompute grade and do not invent a hill. If a slower mile or repetition lines up with a calculated climb, say so. If elevation_effect.available is false, leave elevation out. On an easy or recovery run, leave the elevation note out.
-Heart rate on repetitions shorter than 30 seconds is not evidence of how hard the effort was.
-metrics.workout_intelligence is calculated before this report. classification.workout_type is the detected structure. observed holds measurements. Do not treat plan_context as proof of what was run. Do not invent repetitions when classification.workout_type is unknown or classification.ambiguous is true. Say which fields are missing.
-When classification.confidence is at least 0.6, phrase activity_classification from that detected type: Easy Run, Recovery, Intervals, Threshold, Long Run, Strides, Hill Sprints, Tempo, or Progression. A stored workout type that disagrees with a confident detection is the older label. Use the detection.
-When confidence is below 0.6, activity_classification is Unknown and the report says the recording does not identify the workout.
-Set effort_level to Easy, Moderate, or Hard Effort from the recorded pace, heart rate, and workout structure. If that evidence is thin, choose the closest level.
-athlete_profile, comparable_activities, and recent_training are saved profile fields or measurements. Refer to a race goal, an earlier performance, or a lactate threshold only when that field is present.
-When athlete_profile.intake is present, quote a race time only when that race is listed.
-prior_interpretations are earlier model text, not measurements. Do not treat an earlier conclusion as a fact.
-Set goal_progress_status to on_track, building, or needs_attention only when the supplied measurements support it. Otherwise use insufficient_evidence.
-Nothing in this report changes the training plan. Tell the coach what to review. Do not tell the athlete what to do.
-How a run felt is the athlete's sensation, not a command. Write "Check that easy running still feels normal before keeping the faster work." Do not write "Keep easy running feeling normal."
-
-recent_training includes the last 7 and 14 days. athlete_profile.training_phase is null when no phase is stored. Do not invent a phase, a fatigue score, or a fitness change.
-Write:
-- workout_identification: what was detected, the confidence, the repetition count when present, and the limitation when the structure is unknown.
-- execution_analysis: repetition consistency, intensity, recovery, and how that compares with plan_context when a plan is present. If there is no plan, do not mention one.
-- summary: one paragraph of 3 to 5 sentences for the coach. Name the athlete. Include the detected structure when confidence is at least 0.6, distance, and heart rate only when heart_rate_usable is true or the effort is longer than 30 seconds.
-- training_impact: one paragraph of 2 to 3 sentences on the stimulus this recording supports for this athlete. Do not invent a physiological adaptation the data cannot show.
-- fitness_indicators: one sentence comparing a measured effort with comparable_activities when those share a structure. If they do not, say the recording cannot support a fitness conclusion.
-- what_went_well: 2 to 3 sentences about one recorded strength, each tied to a number in the context. State the observation. Do not praise the athlete in the second person.
-- where_to_focus: 2 to 3 sentences on execution problems, fatigue signals, or missing evidence. If nothing is off, say what the coach should confirm.
-- coach_takeaway: two to four sentences on what matters and what the coach should consider next. Do not change the plan.
-- goal_progress: one sentence for the coach. If the goal or the comparable evidence is missing, say so.
-"""
-
-REPORT_JSON_SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "activity_classification": {"type": "string"},
-        "effort_level": {"type": "string", "enum": ["Easy", "Moderate", "Hard Effort"]},
-        "workout_identification": {"type": "string"},
-        "execution_analysis": {"type": "string"},
-        "summary": {"type": "string"},
-        "training_impact": {"type": "string"},
-        "fitness_indicators": {"type": "string"},
-        "what_went_well": {"type": "array", "items": {"type": "string"}},
-        "where_to_focus": {"type": "array", "items": {"type": "string"}},
-        "coach_takeaway": {"type": "string"},
-        "goal_progress_status": {
-            "type": "string",
-            "enum": ["on_track", "building", "needs_attention", "insufficient_evidence"],
-        },
-        "goal_progress": {"type": "string"},
-        "missing_information": {"type": "array", "items": {"type": "string"}},
-    },
-    "required": [
-        "activity_classification",
-        "effort_level",
-        "workout_identification",
-        "execution_analysis",
-        "summary",
-        "training_impact",
-        "fitness_indicators",
-        "what_went_well",
-        "where_to_focus",
-        "coach_takeaway",
-        "goal_progress_status",
-        "goal_progress",
-        "missing_information",
-    ],
-}
-
-REPORT_RESPONSE_FORMAT = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "workout_coaching_report",
-        "strict": True,
-        "schema": REPORT_JSON_SCHEMA,
-    },
-}
-
-
 def _sentences(value: list[str]) -> list[str]:
     items = [item.strip() for item in value if item and item.strip()]
     if len(items) < 1 or len(items) > 4:
         raise ValueError("provide 1 to 4 sentences")
     return items
+
+
+class CoachingAssessment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ranked_findings: list[str]
+    execution_judgment: str
+    primary_stimulus: str
+    future_consideration: str
+    adjustment: Literal["continue", "adjust", "insufficient_evidence"]
+    material_limitations: list[str]
+    historical_context: str
+
+    @field_validator("execution_judgment", "primary_stimulus", "future_consideration", "historical_context")
+    @classmethod
+    def assessment_text(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("assessment field is empty")
+        return text
+
+
+class BriefReport(BaseModel):
+    """Athlete-facing report. The assessment stays stored for the detail panel."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    workout_analysis: str
+    training_impact: str
+    coach_takeaway: str
+    coaching_assessment: CoachingAssessment
+
+    @field_validator("workout_analysis", "training_impact", "coach_takeaway")
+    @classmethod
+    def brief_text(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("section is empty")
+        return text
 
 
 class WorkoutReport(BaseModel):
@@ -192,6 +150,8 @@ class WorkoutReport(BaseModel):
 
 
 def validate_report(payload: dict) -> dict:
+    if isinstance(payload, dict) and payload.get("workout_analysis"):
+        return BriefReport.model_validate(payload).model_dump()
     return WorkoutReport.model_validate(payload).model_dump()
 
 
@@ -225,6 +185,10 @@ def present_report(
         return None
     shown = dict(report)
     shown["analysis_kind"] = session_kind(workout_type, report)
+    analysis = shown.get("workout_analysis")
+    if isinstance(analysis, str):
+        shown["workout_analysis"] = analysis.strip()
+        shown["summary"] = analysis.strip()
     summary = shown.get("summary")
     if isinstance(summary, str):
         shown["summary"] = summary.strip()
@@ -317,6 +281,8 @@ def build_metrics(session: Session, athlete: Athlete, activity: Activity, *, pla
                 "cadence_spm": sample.cadence_spm,
                 "altitude_meters": sample.altitude_meters,
                 "power_watts": sample.power_watts,
+                "latitude": sample.latitude,
+                "longitude": sample.longitude,
             }
             for sample in samples
         ],
@@ -761,16 +727,18 @@ TOOLS = [
 ]
 
 
-def _client(settings: Settings):
+def _client(settings: Settings, *, timeout: float = 120.0):
     from openai import OpenAI
 
-    return OpenAI(api_key=settings.openai_api_key, timeout=120.0, max_retries=1)
+    return OpenAI(api_key=settings.openai_api_key, timeout=timeout, max_retries=1)
 
 
 def _completion(client, **kwargs):
+    reasoning_effort = kwargs.pop("reasoning_effort", "none")
     try:
-        return client.chat.completions.create(**kwargs, extra_body={"reasoning_effort": "none"})
+        return client.chat.completions.create(**kwargs, extra_body={"reasoning_effort": reasoning_effort})
     except Exception:
+        logger.info("Model call with reasoning_effort=%s was rejected; retrying without it", reasoning_effort)
         return client.chat.completions.create(**kwargs)
 
 
@@ -838,10 +806,61 @@ def build_report_context(session: Session, athlete: Athlete, activity: Activity)
     current = build_metrics(session, athlete, activity, plan=planned)
     workout_type = current["activity"].get("workout_type")
     activities = list(session.scalars(select(Activity).where(Activity.athlete_id == athlete.id)).all())
-    now = datetime.now(UTC)
-    seven_count, _, seven_meters = window_stats(activities, now=now, days=7)
-    fourteen_count, _, fourteen_meters = window_stats(activities, now=now, days=14)
-    twenty_eight_count, _, twenty_eight_meters = window_stats(activities, now=now, days=28)
+    anchor = activity.start_time_utc or datetime.now(UTC)
+
+    def on_or_before(item: Activity) -> bool:
+        if item.id == activity.id:
+            return True
+        if item.start_time_utc is None:
+            return False
+        return as_utc(item.start_time_utc) <= as_utc(anchor)
+
+    bounded = [item for item in activities if on_or_before(item)]
+    seven_count, _, seven_meters = window_stats(bounded, now=anchor, days=7)
+    fourteen_count, _, fourteen_meters = window_stats(bounded, now=anchor, days=14)
+    twenty_eight_count, _, twenty_eight_meters = window_stats(bounded, now=anchor, days=28)
+    type_by_activity = {
+        row.activity_id: row.workout_type
+        for row in session.scalars(select(WorkoutClassification).where(WorkoutClassification.activity_id.in_([item.id for item in activities] or [0]))).all()
+    }
+    local_day = activity.start_time_local[:10] if activity.start_time_local and len(activity.start_time_local) >= 10 else None
+    surrounding = surrounding_sessions(
+        [
+            {
+                "id": item.id,
+                "garmin_activity_id": item.garmin_activity_id,
+                "name": item.name,
+                "start_time_local": item.start_time_local,
+                "start_time_utc": item.start_time_utc,
+                "distance_meters": item.distance_meters,
+                "duration_seconds": item.duration_seconds,
+                "average_speed_mps": item.average_speed_mps,
+                "workout_type": type_by_activity.get(item.id),
+            }
+            for item in activities
+        ],
+        activity_id=activity.id,
+        activity_day=local_day,
+        anchor=anchor,
+    )
+    upcoming = []
+    if local_day:
+        from datetime import date as date_cls
+
+        start_day = date_cls.fromisoformat(local_day)
+        planned_rows = session.scalars(
+            select(ScheduledWorkout)
+            .where(
+                ScheduledWorkout.athlete_id == athlete.id,
+                ScheduledWorkout.scheduled_date >= start_day,
+                ScheduledWorkout.scheduled_date <= start_day + timedelta(days=7),
+            )
+            .order_by(ScheduledWorkout.scheduled_date)
+        ).all()
+        upcoming = [
+            {"scheduled_date": row.scheduled_date.isoformat(), "title": row.title, "workout_type": row.workout_type}
+            for row in planned_rows
+        ]
     filters = [Activity.athlete_id == athlete.id, Activity.id != activity.id]
     if workout_type:
         filters.append(WorkoutClassification.workout_type == workout_type)
@@ -929,13 +948,18 @@ def build_report_context(session: Session, athlete: Athlete, activity: Activity)
         },
         "current_activity": current,
         "recent_training": {
+            "anchored_to": None if activity.start_time_utc is None else activity.start_time_utc.isoformat(),
             "last_7_days_activity_count": seven_count,
             "last_7_days_distance_meters": seven_meters,
             "last_14_days_activity_count": fourteen_count,
             "last_14_days_distance_meters": fourteen_meters,
             "last_28_days_activity_count": twenty_eight_count,
             "last_28_days_distance_meters": twenty_eight_meters,
+            "workout_type_counts": surrounding["workout_type_counts"],
         },
+        "recent_sessions": surrounding["recent_sessions"],
+        "same_day_activities": surrounding["same_day_activities"],
+        "upcoming_workouts": upcoming,
         "comparable_activities": comparable,
         "comparable_match": "same_stored_workout_type" if workout_type else "recent_activities_because_this_workout_has_no_type",
         "prior_interpretations": prior_interpretations,
@@ -978,55 +1002,60 @@ def _planned_vs_actual(session: Session, athlete: Athlete, activity: Activity) -
     return None
 
 
-def generate_report(session: Session, settings: Settings, athlete: Athlete, activity: Activity) -> WorkoutAnalysis:
-    if not openai_configured(settings):
-        raise RuntimeError("openai_not_configured")
-    context = build_report_context(session, athlete, activity)
-    workout_type = (context.get("current_activity") or {}).get("activity", {}).get("workout_type")
-    kind = session_kind(workout_type if isinstance(workout_type, str) else None)
-    length_note = (
-        "This stored session is an easy or recovery run. Write for the coach, using the athlete's name. Summarize mile laps as a range when they are stored, and do not turn the run into a repetition workout."
-        if kind == "easy"
-        else "This stored session is a workout. Write for the coach, using the athlete's name, and include the calculated structure and elevation when those fields are present."
-    )
-    client = _client(settings)
+def _structured_completion(settings: Settings, *, model: str, reasoning_effort: str, system: str, user: str, schema_name: str, schema: dict) -> dict:
+    client = _client(settings, timeout=180.0)
     messages = [
-        {"role": "system", "content": REPORT_PROMPT},
-        {
-            "role": "user",
-            "content": length_note + "\nWrite the coaching report from this context only:\n" + json.dumps(context, default=str),
-        },
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
     ]
-    report = None
-    validation_error = "The model returned no report."
+    last_error = "The model returned no JSON."
     for _attempt in range(2):
         completion = _completion(
             client,
-            model=settings.openai_model,
-            response_format=REPORT_RESPONSE_FORMAT,
+            model=model,
+            reasoning_effort=reasoning_effort,
+            response_format={"type": "json_schema", "json_schema": {"name": schema_name, "strict": True, "schema": schema}},
             messages=messages,
         )
         text = completion.choices[0].message.content or ""
         try:
-            report = validate_report(json.loads(text))
-            break
-        except (json.JSONDecodeError, ValidationError) as exc:
-            validation_error = str(exc)
+            return json.loads(text)
+        except json.JSONDecodeError as exc:
+            last_error = str(exc)
             messages.append({"role": "assistant", "content": text})
-            messages.append(
-                {
-                    "role": "user",
-                    "content": "That JSON failed validation. Return a corrected object. " + validation_error,
-                }
-            )
-    if report is None:
-        raise RuntimeError(f"report_validation_failed: {validation_error}")
+            messages.append({"role": "user", "content": "Return one JSON object that matches the schema. " + last_error})
+    raise RuntimeError(f"report_validation_failed: {last_error}")
+
+
+def generate_report(session: Session, settings: Settings, athlete: Athlete, activity: Activity) -> WorkoutAnalysis:
+    if not openai_configured(settings):
+        raise RuntimeError("openai_not_configured")
+    context = build_report_context(session, athlete, activity)
+    detected, confidence = detected_type(context)
+    workout_type = detected if confidence >= 0.6 and detected else (context.get("current_activity") or {}).get("activity", {}).get("workout_type")
+    logger.info(
+        "Coaching analysis started for athlete %s activity %s type %s",
+        athlete.id,
+        activity.garmin_activity_id,
+        workout_type,
+    )
+    try:
+        draft, trace = run_coaching_analysis(
+            settings,
+            context,
+            lambda **kwargs: _structured_completion(settings, **kwargs),
+        )
+        report = validate_report(draft)
+    except (ValidationError, RuntimeError):
+        logger.exception("Coaching analysis failed for activity %s", activity.garmin_activity_id)
+        raise
     report = present_report(
         report,
         workout_type=workout_type if isinstance(workout_type, str) else None,
         distance_meters=activity.distance_meters,
         average_speed_mps=activity.average_speed_mps,
     )
+    report["pipeline"] = trace
     now = datetime.now(UTC)
     row = WorkoutAnalysis(
         activity_id=activity.id,
@@ -1038,6 +1067,12 @@ def generate_report(session: Session, settings: Settings, athlete: Athlete, acti
     session.add(row)
     session.commit()
     session.refresh(row)
+    logger.info(
+        "Coaching analysis stored for activity %s version %s violations %s",
+        activity.garmin_activity_id,
+        trace.get("prompt_version"),
+        len(trace.get("guard_violations") or []),
+    )
     return row
 
 

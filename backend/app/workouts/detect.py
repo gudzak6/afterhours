@@ -57,7 +57,7 @@ def detect_workout(
     timer_events = list(timer_events or [])
     points = _points(samples)
     pauses = _pauses(points, timer_events, rules)
-    signals = _signals(laps, points, steps, timer_events)
+    signals = _signals(laps, points, steps, timer_events, samples)
     missing = _missing(signals)
     limitations: list[str] = []
     if not signals["workout_steps"]:
@@ -617,7 +617,7 @@ def _pauses(points: list[dict], events: list[dict], rules: DetectionRules) -> li
     return found
 
 
-def _signals(laps: list[dict], points: list[dict], steps: list[dict], events: list[dict]) -> dict:
+def _signals(laps: list[dict], points: list[dict], steps: list[dict], events: list[dict], samples: list[dict]) -> dict:
     def any_point(key: str) -> bool:
         return any(point.get(key) is not None for point in points)
 
@@ -630,7 +630,7 @@ def _signals(laps: list[dict], points: list[dict], steps: list[dict], events: li
         "laps": bool(laps),
         "workout_steps": bool(steps),
         "timer_events": bool(events),
-        "gps": False,
+        "gps": any(sample.get("latitude") is not None and sample.get("longitude") is not None for sample in samples),
     }
 
 

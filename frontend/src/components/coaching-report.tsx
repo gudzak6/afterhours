@@ -7,6 +7,9 @@ function lines(value: unknown): string[] {
 }
 
 export function CoachingReport({ report }: { report: Record<string, unknown> }) {
+  if (typeof report.workout_analysis === "string") {
+    return <BriefReport report={report} />;
+  }
   if (typeof report.summary === "string" && (typeof report.activity_classification === "string" || typeof report.training_impact === "string")) {
     return <Assessment report={report} />;
   }
@@ -14,6 +17,14 @@ export function CoachingReport({ report }: { report: Record<string, unknown> }) 
     return <EarlierBriefing report={report} />;
   }
   return <LegacyReport report={report} />;
+}
+
+function sessionLabel(value: string) {
+  if (!value.includes("_")) return value;
+  return value
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 function effortLabel(value: string) {
@@ -26,11 +37,47 @@ function paragraph(items: string[]) {
   return items.join(" ");
 }
 
+function BriefReport({ report }: { report: Record<string, unknown> }) {
+  const assessment = record(report.coaching_assessment);
+  const analyst = record(record(report.pipeline).analyst);
+  const findings = lines(assessment.ranked_findings);
+  const limits = unique([...lines(assessment.material_limitations), ...lines(analyst.limitations), ...lines(analyst.uncertainty)]);
+  const evidence = [...lines(analyst.evidence), ...lines(analyst.rep_notes)];
+
+  return (
+    <div className="space-y-5">
+      <Section title="Workout Analysis" body={text(report.workout_analysis)} />
+      <Section title="Training Impact" body={text(report.training_impact)} />
+      <Section title="Coach's Takeaway" body={text(report.coach_takeaway)} />
+      <details className="rounded-md border border-emerald-200 px-3 py-2">
+        <summary className="cursor-pointer font-medium text-emerald-900">Detailed Analysis</summary>
+        <div className="mt-3 space-y-3">
+          <Section title="Findings" body={findings.join(" ")} />
+          <Section title="Execution" body={text(assessment.execution_judgment)} />
+          <Section title="Stimulus" body={text(assessment.primary_stimulus)} />
+          <Section title="Recent training" body={text(assessment.historical_context)} />
+          <Section title="Next session" body={text(assessment.future_consideration)} />
+          <BulletList title="Limits of this recording" items={limits} />
+          <BulletList title="Evidence" items={evidence} />
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function unique(items: string[]) {
+  return items.filter((item, index) => item && items.indexOf(item) === index);
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
 function Assessment({ report }: { report: Record<string, unknown> }) {
   const wentWell = lines(report.what_went_well);
   const focus = lines(report.where_to_focus);
   const effort = effortLabel(text(report.effort_level));
-  const classification = text(report.activity_classification);
+  const classification = sessionLabel(text(report.activity_classification));
 
   return (
     <div className="space-y-5">
@@ -38,9 +85,8 @@ function Assessment({ report }: { report: Record<string, unknown> }) {
         {effort ? <span className="rounded-full bg-emerald-100 px-3 py-1 text-sm font-medium text-emerald-900">{effort}</span> : null}
         {classification ? <span className="rounded-full bg-emerald-100 px-3 py-1 text-sm font-medium text-emerald-900">{classification}</span> : null}
       </div>
-      <Section title="Workout Identification" body={text(report.workout_identification)} />
+      <Section title="Workout Summary" body={text(report.summary)} />
       <Section title="Execution Analysis" body={text(report.execution_analysis)} />
-      <Section title="Summary" body={text(report.summary)} />
       <Section title="Training Impact" body={text(report.training_impact)} />
       <Section title="Fitness Indicators" body={text(report.fitness_indicators)} />
       {wentWell.length > 0 ? (

@@ -453,6 +453,8 @@ def get_activity(
             "cadence_spm": sample.cadence_spm,
             "altitude_meters": sample.altitude_meters,
             "power_watts": sample.power_watts,
+            "latitude": sample.latitude,
+            "longitude": sample.longitude,
         }
         for sample in samples
     ]

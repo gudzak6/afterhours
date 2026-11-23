@@ -473,7 +473,7 @@ function AnalysisModal({
         <div className="flex flex-col gap-2 border-t border-border px-5 py-4 sm:flex-row sm:justify-end">
           <Button type="button" variant="outline" className="h-11 w-full sm:h-8 sm:w-auto" onClick={onClose}>Close</Button>
           <Button type="button" className="h-11 w-full sm:h-8 sm:w-auto" disabled={busy || loading} onClick={() => void writeAgain()}>
-            {busy ? "Writing…" : report ? "Write another report" : "Write report"}
+            {busy ? "Writing…" : report ? "Generate again" : "Generate analysis"}
           </Button>
         </div>
       </div>

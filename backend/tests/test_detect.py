@@ -161,3 +161,12 @@ def test_repetition_minimum_is_configurable() -> None:
     )
     assert result["classification"]["workout_type"] == "unknown"
     assert result["classification"]["ambiguous"] is True
+
+
+def test_coordinates_mark_gps_present() -> None:
+    samples = _stream([(60, 4.5, 8, 150), (50, 1.3, 0, 120)] * 5)
+    for sample in samples:
+        sample["latitude"] = 40.4
+        sample["longitude"] = -74.4
+    result = detect_workout(_laps([(60, 4.5, 8, 150), (50, 1.3, 0, 120)] * 5), samples)
+    assert result["observed"]["signals"]["gps"] is True

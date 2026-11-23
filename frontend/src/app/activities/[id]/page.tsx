@@ -143,7 +143,7 @@ export default function ActivityDetailPage() {
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <Button type="button" disabled={busy !== null} onClick={() => void onReport()}>
-            {busy === "report" ? "Writing…" : report ? "Write another report" : "Write report"}
+            {busy === "report" ? "Writing…" : report ? "Generate again" : "Generate analysis"}
           </Button>
           {report ? <CoachingReport report={report} /> : <p className="text-muted-foreground">No report stored.</p>}
           <Link href={`/agent?activity=${activity.garmin_activity_id}${activity.athlete_id == null ? "" : `&athlete=${activity.athlete_id}`}`} className="underline">
