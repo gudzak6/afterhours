@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Bell, BellOff, Calendar, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleCheck, Info, RefreshCw, Sparkles } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { AthleteName } from "@/components/athlete-name";
 import { Button } from "@/components/ui/button";
 import { mirrorRosterRuns } from "@/lib/account";
@@ -246,7 +246,7 @@ function totalMiles(activities: DashboardActivity[]) {
 function dayStatus(group: AthleteDay) {
   if (group.activities.length > 0 && group.planned.length > 0) return "Completed";
   if (group.activities.length > 0) return "Unplanned";
-  if (group.planned.length > 0) return "Pending";
+  if (group.planned.length > 0) return "Planned";
   return "Unplanned";
 }
 
@@ -281,7 +281,17 @@ function reviewLine(count: number) {
   return `${label} activities recorded. Review ${together} together for the day's coaching assessment.`;
 }
 
-function AthletePanel({ group, open, onToggle, planHref }: { group: AthleteDay; open: boolean; onToggle: () => void; planHref: string | null }) {
+function AthletePanel({
+  group,
+  open,
+  onToggle,
+  planHref,
+}: {
+  group: AthleteDay;
+  open: boolean;
+  onToggle: () => void;
+  planHref: string | null;
+}) {
   const status = dayStatus(group);
   const miles = totalMiles(group.activities);
   const milesText = miles == null ? null : `${miles.toFixed(2)} mi`;
@@ -289,10 +299,10 @@ function AthletePanel({ group, open, onToggle, planHref }: { group: AthleteDay; 
   const summary = group.activities.length === 0
     ? `${planText} · No activity yet`
     : `${planText} · ${milesText ?? "Distance unavailable"}${group.activities.length === 1 ? "" : ` · ${group.activities.length} runs`}`;
-  const statusClass = status === "Completed" ? "text-emerald-700" : status === "Pending" ? "text-amber-700" : "text-muted-foreground";
+  const statusClass = status === "Completed" ? "text-emerald-700" : status === "Planned" ? "text-amber-700" : "text-muted-foreground";
 
   return (
-    <article className="rounded-xl border border-border bg-card">
+    <article className="rounded-lg border border-border bg-background">
       <div
         role="button"
         tabIndex={0}
@@ -304,7 +314,7 @@ function AthletePanel({ group, open, onToggle, planHref }: { group: AthleteDay; 
           }
         }}
         aria-expanded={open}
-        className="flex w-full cursor-pointer items-start gap-3 px-4 py-4 text-left"
+        className="flex w-full cursor-pointer items-start gap-3 px-3 py-3 text-left"
       >
         <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-sm font-semibold">
           {initials(group.athleteName)}
@@ -332,41 +342,40 @@ function AthletePanel({ group, open, onToggle, planHref }: { group: AthleteDay; 
         {open ? <ChevronUp className="mt-1 size-4 shrink-0 text-muted-foreground" /> : <ChevronDown className="mt-1 size-4 shrink-0 text-muted-foreground" />}
       </div>
       {open ? (
-        <div className="space-y-5 border-t border-border px-4 py-4">
-          <div className="grid gap-5 sm:grid-cols-2">
-            <div>
+        <div className="space-y-3 border-t border-border px-3 py-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
               <p className="flex items-center gap-2 text-xs tracking-[0.14em] text-muted-foreground uppercase">
                 <Calendar className="size-3.5" />
                 Planned
               </p>
-              <p className="mt-2 font-semibold">
-                {group.planned.length === 0 ? "No workout assigned" : planHref ? (
-                  <Link href={planHref} className="hover:underline">{planText}</Link>
-                ) : planText}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {group.planned.length === 0 ? "No prescribed workout to compare against." : "The workout stored for this day."}
-              </p>
+              {group.planned.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No workout assigned</p>
+              ) : group.planned.map((plan) => (
+                <div key={plan.id} className="rounded-lg border border-border bg-background px-2.5 py-2">
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium">{plan.title}</span>
+                    {plan.detail ? <span className="block text-xs text-muted-foreground">{(plan.detail.split(" · ").filter((part) => /\d/.test(part)).join(" · ")) || plan.detail}</span> : null}
+                  </span>
+                </div>
+              ))}
             </div>
-            <div>
+            <div className="space-y-2">
               <p className="flex items-center gap-2 text-xs tracking-[0.14em] text-muted-foreground uppercase">
                 <CircleCheck className="size-3.5" />
                 Completed
               </p>
-              <p className="mt-2 font-semibold">{milesText ? `${milesText} total` : "No activity yet"}</p>
               {group.activities.length === 0 ? (
-                <p className="mt-1 text-sm text-muted-foreground">Nothing recorded for this day.</p>
-              ) : (
-                <ul className="mt-1 space-y-1 text-sm text-muted-foreground">
-                  {group.activities.map((activity) => (
-                    <li key={`${activity.garmin_activity_id}-${activity.start_time_local}`}>
-                      <Link href={activityPath(activity.garmin_activity_id, group.athleteId)} className="hover:text-foreground hover:underline">
-                        {completedLine(activity)}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
+                <p className="text-sm text-muted-foreground">No activity yet</p>
+              ) : group.activities.map((activity) => (
+                <Link
+                  key={`${activity.garmin_activity_id}-${activity.start_time_local}`}
+                  href={activityPath(activity.garmin_activity_id, group.athleteId)}
+                  className="block rounded-lg border border-border bg-background px-2.5 py-2 text-sm hover:bg-muted"
+                >
+                  {completedLine(activity)}
+                </Link>
+              ))}
             </div>
           </div>
           <div>
@@ -376,11 +385,6 @@ function AthletePanel({ group, open, onToggle, planHref }: { group: AthleteDay; 
             </p>
             <p className="mt-1 text-sm text-muted-foreground">{reviewLine(group.activities.length)}</p>
           </div>
-          <p className="text-right text-sm">
-            <Link href={`/athletes/${group.athleteId}`} className="text-muted-foreground hover:text-foreground hover:underline">
-              Full workout analysis in athlete detail →
-            </Link>
-          </p>
         </div>
       ) : null}
     </article>
@@ -404,80 +408,123 @@ function paceLabel(seconds: number | null | undefined) {
   return `${minutes}:${String(rounded % 60).padStart(2, "0")} /mi`;
 }
 
-function WeekStrip({
-  weekStart,
+const SCHEDULE_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function mondayOf(iso: string): string {
+  const offset = (parseDay(iso).getDay() + 6) % 7;
+  return shiftDay(iso, -offset);
+}
+
+function weekRangeLabel(start: string): string {
+  const end = parseDay(shiftDay(start, 6));
+  const begin = parseDay(start);
+  const left = `${MONTHS[begin.getMonth()].slice(0, 3)} ${begin.getDate()}`;
+  const right = begin.getMonth() === end.getMonth()
+    ? String(end.getDate())
+    : `${MONTHS[end.getMonth()].slice(0, 3)} ${end.getDate()}`;
+  return `${left} – ${right}`;
+}
+
+function TrainingSchedule({
   selectedDay,
+  markedDays,
   reloading,
   syncing,
+  athletes,
+  athleteFilter,
+  onAthlete,
   onSelect,
   onShiftWeek,
   onReload,
+  children,
 }: {
-  weekStart: string;
   selectedDay: string;
+  markedDays: Set<string>;
   reloading: boolean;
   syncing: boolean;
+  athletes: Array<{ id: number; display_name: string }>;
+  athleteFilter: number | "all";
+  onAthlete: (athleteId: number | "all") => void;
   onSelect: (day: string) => void;
   onShiftWeek: (weeks: number) => void;
   onReload: () => void;
+  children: ReactNode;
 }) {
-  const days = WEEKDAYS.map((_, index) => shiftDay(weekStart, index));
+  const weekStart = mondayOf(selectedDay);
+  const days = SCHEDULE_DAYS.map((_, index) => shiftDay(weekStart, index));
   return (
-    <div className="max-w-xl space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => onShiftWeek(-1)}
-          className="inline-flex size-11 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground hover:bg-muted"
-          aria-label="Previous week"
-        >
-          <ChevronLeft className="size-4" />
-        </button>
-        <p className="min-w-0 text-center text-xs tracking-[0.08em] text-muted-foreground uppercase sm:tracking-[0.16em]">{dayLabel(selectedDay)}</p>
-        <button
-          type="button"
-          onClick={() => onShiftWeek(1)}
-          className="inline-flex size-11 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground hover:bg-muted"
-          aria-label="Next week"
-        >
-          <ChevronRight className="size-4" />
-        </button>
+    <section className="rounded-xl border border-border bg-card px-3 py-3 sm:px-4">
+      <div className="flex flex-col gap-3 md:grid md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-center md:gap-4 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+        <h2 className="font-heading text-xl tracking-tight">Athletes Training Week</h2>
+        <div className="flex items-center justify-between gap-3 sm:justify-center">
+          <button
+            type="button"
+            onClick={() => onShiftWeek(-1)}
+            className="inline-flex size-10 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground hover:bg-muted"
+            aria-label="Previous week"
+          >
+            <ChevronLeft className="size-4" />
+          </button>
+          <p className="min-w-28 text-center text-sm font-medium">{weekRangeLabel(weekStart)}</p>
+          <button
+            type="button"
+            onClick={() => onShiftWeek(1)}
+            className="inline-flex size-10 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground hover:bg-muted"
+            aria-label="Next week"
+          >
+            <ChevronRight className="size-4" />
+          </button>
+        </div>
+        <div className="flex items-center gap-2 md:justify-end">
+          <select
+            aria-label="Athlete"
+            value={athleteFilter === "all" ? "all" : String(athleteFilter)}
+            onChange={(event) => onAthlete(event.target.value === "all" ? "all" : Number(event.target.value))}
+            className="h-10 min-w-0 flex-1 rounded-full border border-border bg-background px-3 text-sm md:w-44 md:flex-none"
+          >
+            <option value="all">All athletes</option>
+            {athletes.map((athlete) => (
+              <option key={athlete.id} value={athlete.id}>{athlete.display_name}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={onReload}
+            disabled={reloading || syncing}
+            className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-border px-3 text-sm text-muted-foreground hover:bg-muted disabled:opacity-60"
+          >
+            <RefreshCw className={`size-3.5 ${reloading || syncing ? "animate-spin" : ""}`} />
+            {syncing ? "Syncing" : "Sync runs"}
+          </button>
+        </div>
       </div>
-      <div className="grid grid-cols-7 gap-1 sm:gap-2">
-          {days.map((day) => {
-            const date = parseDay(day);
-            const selected = day === selectedDay;
-            return (
-              <button
-                key={day}
-                type="button"
-                onClick={() => onSelect(day)}
-                aria-pressed={selected}
-                className={`mx-auto flex aspect-square w-full max-w-12 flex-col items-center justify-center rounded-full border text-center ${
-                  selected
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border bg-card text-foreground hover:bg-muted"
-                }`}
-              >
-                <span className="text-[9px] leading-none tracking-wide uppercase max-[380px]:hidden sm:text-[10px]">{WEEKDAYS[date.getDay()]}</span>
-                <span className="text-[10px] leading-none uppercase min-[381px]:hidden">{WEEKDAYS[date.getDay()].slice(0, 1)}</span>
-                <span className="text-xs font-medium leading-none sm:text-sm">{date.getDate()}</span>
-              </button>
-            );
-          })}
+      <div className="mt-3 grid grid-cols-7 gap-1.5 sm:gap-3">
+        {days.map((day, index) => {
+          const date = parseDay(day);
+          const selected = day === selectedDay;
+          const marked = markedDays.has(day);
+          return (
+            <button
+              key={day}
+              type="button"
+              onClick={() => onSelect(day)}
+              aria-pressed={selected}
+              aria-label={`${SCHEDULE_DAYS[index]} ${date.getDate()}${marked ? ", workout planned" : ""}`}
+              className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-lg border px-1 py-2 ${
+                selected
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-background text-foreground hover:bg-muted"
+              }`}
+            >
+              <span className="text-[10px] tracking-wide uppercase sm:text-xs">{SCHEDULE_DAYS[index]}</span>
+              <span className="text-base leading-none font-medium sm:text-lg">{date.getDate()}</span>
+              <span className={`size-1.5 rounded-full ${marked ? (selected ? "bg-primary-foreground" : "bg-primary") : "invisible"}`} />
+            </button>
+          );
+        })}
       </div>
-      <div>
-        <button
-          type="button"
-          onClick={onReload}
-          disabled={reloading || syncing}
-          className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-border px-4 text-xs text-muted-foreground hover:bg-muted disabled:opacity-60"
-        >
-          <RefreshCw className={`size-3.5 ${reloading || syncing ? "animate-spin" : ""}`} />
-          {syncing ? "Syncing" : "Sync athlete runs"}
-        </button>
-      </div>
-    </div>
+      <div className="mt-3 border-t border-border pt-3">{children}</div>
+    </section>
   );
 }
 
@@ -486,6 +533,7 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [selectedAthlete, setSelectedAthlete] = useState<number | "all">("all");
   const [openAthletes, setOpenAthletes] = useState<number[]>([]);
   const [reloading, setReloading] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -572,7 +620,10 @@ export default function DashboardPage() {
   }
 
   const groups = dashboard && selectedDay ? athletesForDay(dashboard, selectedDay) : [];
-  const groupKey = groups.map((group) => group.athleteId).join(",");
+  const roster = dashboard?.athletes ?? [];
+  const athleteFilter = roster.some((athlete) => athlete.id === selectedAthlete) ? selectedAthlete : "all";
+  const visibleGroups = athleteFilter === "all" ? groups : groups.filter((group) => group.athleteId === athleteFilter);
+  const groupKey = visibleGroups.map((group) => group.athleteId).join(",");
   useEffect(() => {
     setOpenAthletes(groupKey ? [Number(groupKey.split(",")[0])] : []);
   }, [selectedDay, groupKey]);
@@ -584,11 +635,14 @@ export default function DashboardPage() {
 
       {dashboard && selectedDay ? (
         <>
-          <WeekStrip
-            weekStart={shiftDay(selectedDay, -parseDay(selectedDay).getDay())}
+          <TrainingSchedule
             selectedDay={selectedDay}
+            markedDays={new Set(dashboard.planned_workouts.filter((plan) => athleteFilter === "all" || plan.athlete_id === athleteFilter).map((plan) => plan.scheduled_date))}
             reloading={reloading}
             syncing={syncing}
+            athletes={roster}
+            athleteFilter={athleteFilter}
+            onAthlete={setSelectedAthlete}
             onSelect={(day) => {
               setSelectedDay(day);
               void load(day);
@@ -599,50 +653,48 @@ export default function DashboardPage() {
               void load(day);
             }}
             onReload={() => void reloadFromGarmin(selectedDay)}
-          />
-          {shiftDay(selectedDay, -parseDay(selectedDay).getDay()) !== dashboard.week_start ? (
-            <p className="text-sm text-muted-foreground">Loading {dayLabel(selectedDay)}…</p>
-          ) : (
-            <section className="rounded-xl border border-border bg-card px-4 py-4 sm:px-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="font-heading text-xl tracking-tight">Today&apos;s Training</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">{fullDayLabel(selectedDay)}</p>
+          >
+            {shiftDay(selectedDay, -parseDay(selectedDay).getDay()) !== dashboard.week_start ? (
+              <p className="text-sm text-muted-foreground">Loading {dayLabel(selectedDay)}…</p>
+            ) : (
+              <>
+                <div className="flex items-end justify-between gap-3">
+                  <p className="text-sm text-muted-foreground">{fullDayLabel(selectedDay)}</p>
+                  <div className="flex items-center gap-3">
+                    <p className="text-sm text-muted-foreground">{visibleGroups.length} {visibleGroups.length === 1 ? "athlete" : "athletes"}</p>
+                    {visibleGroups.length > 0 ? (
+                      <button
+                        type="button"
+                        className="text-sm text-muted-foreground hover:text-foreground"
+                        onClick={() => setOpenAthletes(openAthletes.length === visibleGroups.length ? [] : visibleGroups.map((group) => group.athleteId))}
+                      >
+                        {openAthletes.length === visibleGroups.length ? "Collapse all" : "Expand all"}
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
-                <p className="text-sm text-muted-foreground">{groups.length} {groups.length === 1 ? "athlete" : "athletes"}</p>
-              </div>
-              {groups.length > 0 ? (
-                <div className="mt-3 flex justify-end">
-                  <button
-                    type="button"
-                    className="text-sm text-muted-foreground hover:text-foreground"
-                    onClick={() => setOpenAthletes(openAthletes.length === groups.length ? [] : groups.map((group) => group.athleteId))}
-                  >
-                    {openAthletes.length === groups.length ? "Collapse all" : "Expand all"}
-                  </button>
-                </div>
-              ) : null}
-              {groups.length === 0 ? (
-                <p className="mt-4 text-sm text-muted-foreground">No athletes on the roster.</p>
-              ) : (
-                <div className="mt-4 space-y-3">
-                  {groups.map((group) => (
-                    <AthletePanel
-                      key={group.athleteId}
-                      group={group}
-                      planHref={selectedDay > dashboard.today && group.planned.length > 0 ? `/athletes/${group.athleteId}?section=plan&day=${selectedDay}` : null}
-                      open={openAthletes.includes(group.athleteId)}
-                      onToggle={() =>
-                        setOpenAthletes((current) =>
-                          current.includes(group.athleteId) ? current.filter((id) => id !== group.athleteId) : [...current, group.athleteId],
-                        )
-                      }
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
+                {visibleGroups.length === 0 ? (
+                  <p className="mt-3 text-sm text-muted-foreground">No athletes on the roster.</p>
+                ) : (
+                  <div className="mt-3 space-y-3">
+                    {visibleGroups.map((group) => (
+                      <AthletePanel
+                        key={group.athleteId}
+                        group={group}
+                        planHref={selectedDay > dashboard.today && group.planned.length > 0 ? `/athletes/${group.athleteId}?section=plan&day=${selectedDay}` : null}
+                        open={openAthletes.includes(group.athleteId)}
+                        onToggle={() =>
+                          setOpenAthletes((current) =>
+                            current.includes(group.athleteId) ? current.filter((id) => id !== group.athleteId) : [...current, group.athleteId],
+                          )
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </TrainingSchedule>
           <details className="group rounded-xl border border-border bg-card">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden">
               <span className="flex items-center gap-2">
@@ -651,13 +703,13 @@ export default function DashboardPage() {
                   <button
                     type="button"
                     className="rounded-full p-1 text-muted-foreground"
-                    aria-label={selectedDay > dashboard.today ? "preview of the planned workouts for this day" : "summary of athletes workouts for today"}
+                    aria-label="summary of all athletes workouts for the day"
                     onClick={(event) => event.preventDefault()}
                   >
                     <Info className="size-4" />
                   </button>
                   <p className="pointer-events-none absolute top-full left-0 z-10 mt-2 hidden w-52 border border-foreground/20 bg-background px-3 py-2 text-[11px] leading-snug text-foreground group-hover/info:block group-focus-within/info:block">
-                    {selectedDay > dashboard.today ? "preview of the planned workouts for this day" : "summary of athletes workouts for today"}
+                    summary of all athletes workouts for the day
                   </p>
                 </span>
               </span>

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, GripVertical } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { StatusPill } from "@/components/status-pill";
@@ -39,6 +39,8 @@ export function TrainingPlan({ athleteId, focusDay }: { athleteId: number; focus
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<WorkoutForm | null>(null);
   const [saving, setSaving] = useState(false);
+  const [moving, setMoving] = useState(false);
+  const [dropDay, setDropDay] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async (focus?: string) => {
@@ -145,6 +147,47 @@ export function TrainingPlan({ athleteId, focusDay }: { athleteId: number; focus
   const selectedDay = day && days.includes(day) ? day : days.find((item) => visible.some((workout) => workout.scheduled_date === item)) ?? days[0] ?? null;
   const dayWorkouts = selectedDay ? visible.filter((workout) => workout.scheduled_date === selectedDay) : visible;
 
+  async function moveWorkout(workout: PlannedWorkout, scheduledDate: string) {
+    if (workout.scheduled_date === scheduledDate || moving) {
+      setDay(scheduledDate);
+      return;
+    }
+    const body = {
+      scheduled_date: scheduledDate,
+      title: workout.title,
+      details: workout.details ?? null,
+      workout_type: workout.workout_type,
+      distance_miles: workout.distance_miles,
+      target_pace: workout.target_pace,
+      coach_notes: workout.coach_notes,
+      warmup: workout.warmup,
+      cooldown: workout.cooldown,
+      repetitions: workout.repetitions,
+      rep_distance_miles: workout.rep_distance_miles,
+      recovery_seconds: workout.recovery_seconds,
+      intensity: workout.intensity,
+    };
+    setMoving(true);
+    setError(null);
+    try {
+      await updateAthletePlan(athleteId, workout.id, body);
+      if (await hasAccount()) {
+        try {
+          await mirrorWorkout(athleteId, workout.id, body, true);
+        } catch {
+          // The coaching plan is saved. The account copy can catch up on the next visit.
+        }
+      }
+      setEditingId(null);
+      setForm(null);
+      await load(scheduledDate);
+    } catch (moveError: unknown) {
+      setError(errorMessage(moveError));
+    } finally {
+      setMoving(false);
+    }
+  }
+
   function showWeek(weekStart: string) {
     setWeek(weekStart);
     const workouts = view?.workouts.filter((workout) => workout.scheduled_date >= weekStart && workout.scheduled_date < addDays(weekStart, 7)) ?? [];
@@ -223,10 +266,23 @@ export function TrainingPlan({ athleteId, focusDay }: { athleteId: number; focus
                     key={item}
                     type="button"
                     onClick={() => setDay(item)}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      setDropDay(item);
+                    }}
+                    onDragLeave={() => setDropDay((current) => (current === item ? null : current))}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      setDropDay(null);
+                      const workoutId = Number(event.dataTransfer.getData("text/plain"));
+                      const workout = view?.workouts.find((entry) => entry.id === workoutId);
+                      if (!workout) return;
+                      void moveWorkout(workout, item);
+                    }}
                     aria-pressed={active}
                     className={`mx-auto flex aspect-square w-full max-w-12 flex-col items-center justify-center rounded-full border text-center ${
                       active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-foreground hover:bg-muted"
-                    }`}
+                    } ${dropDay === item ? "ring-2 ring-primary" : ""}`}
                   >
                     <span className="text-[9px] leading-none tracking-wide uppercase max-[380px]:hidden sm:text-[10px]">{WEEKDAYS[index]}</span>
                     <span className="text-[10px] leading-none uppercase min-[381px]:hidden">{WEEKDAYS[index].slice(0, 1)}</span>
@@ -240,11 +296,22 @@ export function TrainingPlan({ athleteId, focusDay }: { athleteId: number; focus
       ) : null}
 
       {selectedDay && dayWorkouts.length === 0 ? <p className="text-sm text-muted-foreground">No workout is scheduled for {dayLabel(selectedDay)}.</p> : null}
+      {dayWorkouts.length > 0 ? <p className="text-xs text-muted-foreground">Drag a workout onto another day to reschedule it.</p> : null}
       <ul className="space-y-3">
         {dayWorkouts.map((workout) => (
-          <li key={workout.id} className="rounded-xl border border-border p-3 text-sm">
+          <li
+            key={workout.id}
+            draggable={!moving && editingId !== workout.id}
+            onDragStart={(event) => {
+              event.dataTransfer.setData("text/plain", String(workout.id));
+              event.dataTransfer.effectAllowed = "move";
+            }}
+            className="rounded-xl border border-border p-3 text-sm"
+          >
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
+              <div className="flex min-w-0 items-start gap-2">
+                <GripVertical className="mt-0.5 size-4 shrink-0 cursor-grab text-muted-foreground" aria-hidden="true" />
+                <div>
                 <p className="font-medium">{workout.scheduled_date} · {workout.title}</p>
                 {workout.details ? (
                   <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{workout.details}</p>
@@ -256,6 +323,7 @@ export function TrainingPlan({ athleteId, focusDay }: { athleteId: number; focus
                     {workout.target_pace ? ` · ${workout.target_pace}/mi` : ""}
                   </p>
                 )}
+                </div>
               </div>
               <StatusPill status={workout.status} />
             </div>
