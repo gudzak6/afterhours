@@ -55,7 +55,7 @@ export default function AthleteHomePage() {
         </div>
         {status.garmin.key_saved ? (
           <Button type="button" variant="outline" onClick={() => void onSync()} disabled={syncing}>
-            {syncing ? "Syncing…" : "Sync Garmin"}
+            {syncing ? "Syncing…" : "Sync athlete runs"}
           </Button>
         ) : (
           <Button type="button" variant="outline" onClick={() => {

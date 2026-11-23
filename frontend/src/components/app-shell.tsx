@@ -7,9 +7,9 @@ import { cn } from "cn";
 const coachLinks = [
   { href: "/", label: "Dashboard" },
   { href: "/athletes", label: "Athletes" },
-  { href: "/agent", label: "Agent" },
+  // The /agent page stays available. Put this link back when the chat returns to the header.
   { href: "/plan", label: "Plans" },
-  { href: "/settings", label: "Settings" },
+  { href: "/settings", label: "Coach's Settings" },
 ];
 
 const athleteLinks = [

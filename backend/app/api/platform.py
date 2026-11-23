@@ -215,6 +215,23 @@ def _planned_summary(plan: ScheduledWorkout, athlete_name: str | None) -> dict:
     }
 
 
+def _classification_marks(db: Session, activities: list[Activity]) -> dict[int, dict]:
+    activity_ids = [activity.id for activity in activities]
+    if not activity_ids:
+        return {}
+    marks: dict[int, dict] = {}
+    rows = db.scalars(select(WorkoutClassification).where(WorkoutClassification.activity_id.in_(activity_ids))).all()
+    for row in rows:
+        evidence = row.evidence if isinstance(row.evidence, dict) else {}
+        intelligence = evidence.get("workout_intelligence") if isinstance(evidence, dict) else None
+        repetitions = intelligence.get("repetitions") if isinstance(intelligence, dict) else None
+        marks[row.activity_id] = {
+            "workout_type": row.workout_type,
+            "repetition_count": repetitions if isinstance(repetitions, int) else None,
+        }
+    return marks
+
+
 def _analysis_summaries(db: Session, activities: list[Activity]) -> dict[int, dict]:
     activity_ids = [activity.id for activity in activities]
     if not activity_ids:
@@ -514,6 +531,7 @@ def dashboard(
     )
     names = {row.id: row.display_name for row in rows}
     summaries = _analysis_summaries(db, recent)
+    structure = _classification_marks(db, recent)
     roster_ids = [row.id for row in rows] or [0]
     plans = list(
         db.scalars(
@@ -544,6 +562,8 @@ def dashboard(
                 "start_time_local": activity.start_time_local,
                 "analysis_summary": None if summaries.get(activity.id) is None else summaries[activity.id]["summary"],
                 "analysis_kind": None if summaries.get(activity.id) is None else summaries[activity.id]["kind"],
+                "workout_type": None if structure.get(activity.id) is None else structure[activity.id]["workout_type"],
+                "repetition_count": None if structure.get(activity.id) is None else structure[activity.id]["repetition_count"],
             }
             for activity in recent
         ],

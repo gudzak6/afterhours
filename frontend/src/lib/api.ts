@@ -467,6 +467,8 @@ export type CoachDashboard = {
     start_time_local: string | null;
     analysis_summary?: string | null;
     analysis_kind?: "easy" | "workout" | null;
+    workout_type?: string | null;
+    repetition_count?: number | null;
   }>;
   planned_workouts: Array<{
     id: number;
