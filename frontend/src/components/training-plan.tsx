@@ -8,20 +8,12 @@ import { StatusPill } from "@/components/status-pill";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { hasAccount, mirrorPlanIfEmpty, mirrorWorkout } from "@/lib/account";
-import { errorMessage, getAthleteById, getAthletePlan, updateAthleteById, updateAthletePlan, type PlanView, type PlanWeek, type PlannedWorkout } from "@/lib/api";
+import { errorMessage, getAthletePlan, updateAthletePlan, type PlanView, type PlanWeek, type PlannedWorkout } from "@/lib/api";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const WORKOUT_TYPES = ["easy", "recovery", "long_run", "intervals", "threshold", "tempo", "marathon_pace", "strides", "progression", "race", "other"];
 const fieldClass = "mt-1 w-full rounded-lg border border-input bg-card px-3 py-2 text-sm";
-const TRAINING_PACES = [
-  { name: "easy", label: "Easy" },
-  { name: "marathon", label: "Marathon" },
-  { name: "lt2", label: "Threshold" },
-  { name: "interval", label: "Interval" },
-  { name: "repetition", label: "Repetition" },
-];
-
 type WorkoutForm = {
   scheduled_date: string;
   title: string;
@@ -145,7 +137,6 @@ export function TrainingPlan({ athleteId, focusDay }: { athleteId: number; focus
   }) ?? [];
   const days = selected ? WEEKDAYS.map((_, index) => addDays(selected.week_start, index)) : [];
   const selectedDay = day && days.includes(day) ? day : days.find((item) => visible.some((workout) => workout.scheduled_date === item)) ?? days[0] ?? null;
-  const dayWorkouts = selectedDay ? visible.filter((workout) => workout.scheduled_date === selectedDay) : visible;
 
   async function moveWorkout(workout: PlannedWorkout, scheduledDate: string) {
     if (workout.scheduled_date === scheduledDate || moving) {
@@ -209,7 +200,6 @@ export function TrainingPlan({ athleteId, focusDay }: { athleteId: number; focus
   return (
     <div className="space-y-4">
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      <TrainingPaces athleteId={athleteId} />
       <Card>
         <CardHeader>
           <CardTitle>Planned and actual mileage</CardTitle>
@@ -237,267 +227,169 @@ export function TrainingPlan({ athleteId, focusDay }: { athleteId: number; focus
 
       {selected && selectedDay ? (
         <div className="space-y-4">
-          <div className="flex max-w-xl items-center justify-between gap-2">
-            <button
-              type="button"
-              onClick={() => shiftWeek(-1)}
-              className="inline-flex size-11 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground hover:bg-muted"
-              aria-label="Previous week"
-            >
-              <ChevronLeft className="size-4" />
-            </button>
-            <p className="min-w-0 text-center text-xs tracking-[0.08em] text-muted-foreground uppercase sm:tracking-[0.16em]">{dayLabel(selectedDay)}</p>
-            <button
-              type="button"
-              onClick={() => shiftWeek(1)}
-              className="inline-flex size-11 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground hover:bg-muted"
-              aria-label="Next week"
-            >
-              <ChevronRight className="size-4" />
-            </button>
+          <div className="space-y-2">
+            <div className="flex items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => shiftWeek(-1)}
+                disabled={!view || view.weeks.findIndex((item) => item.week_start === week) <= 0}
+                className="inline-flex size-11 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground hover:bg-muted disabled:opacity-40"
+                aria-label="Previous week"
+              >
+                <ChevronLeft className="size-4" />
+              </button>
+              <select
+                aria-label="Week"
+                value={selected.week_start}
+                onChange={(event) => showWeek(event.target.value)}
+                className="h-11 rounded-full border border-border bg-card px-4 text-sm"
+              >
+                {(view?.weeks ?? []).map((item, index) => (
+                  <option key={item.week_start} value={item.week_start}>Week {index + 1}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => shiftWeek(1)}
+                disabled={!view || view.weeks.findIndex((item) => item.week_start === week) >= view.weeks.length - 1}
+                className="inline-flex size-11 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground hover:bg-muted disabled:opacity-40"
+                aria-label="Next week"
+              >
+                <ChevronRight className="size-4" />
+              </button>
+            </div>
+            <p className="text-center text-xs tracking-[0.08em] text-muted-foreground uppercase sm:tracking-[0.16em]">{weekRangeLabel(selected.week_start)}</p>
           </div>
-          <div className="grid max-w-xl grid-cols-7 gap-1 sm:gap-2">
-              {days.map((item, index) => {
-                const date = parseDay(item);
-                const active = item === selectedDay;
-                const hasWorkout = visible.some((workout) => workout.scheduled_date === item);
-                return (
+          <p className="text-xs text-muted-foreground">Drag a workout onto another day to reschedule it.</p>
+          <div className="space-y-3">
+            {days.map((item, index) => {
+              const date = parseDay(item);
+              const active = item === selectedDay;
+              const hasWorkout = visible.some((workout) => workout.scheduled_date === item);
+              const dayWorkoutsForRow = visible.filter((workout) => workout.scheduled_date === item);
+              return (
+                <div
+                  key={item}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    setDropDay(item);
+                  }}
+                  onDragLeave={(event) => {
+                    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+                    setDropDay((current) => (current === item ? null : current));
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    setDropDay(null);
+                    const workoutId = Number(event.dataTransfer.getData("text/plain"));
+                    const workout = view?.workouts.find((entry) => entry.id === workoutId);
+                    if (!workout) return;
+                    void moveWorkout(workout, item);
+                  }}
+                  className={`flex items-start gap-3 rounded-xl border p-3 ${dropDay === item ? "border-primary bg-muted" : "border-border"}`}
+                >
                   <button
-                    key={item}
                     type="button"
                     onClick={() => setDay(item)}
-                    onDragOver={(event) => {
-                      event.preventDefault();
-                      setDropDay(item);
-                    }}
-                    onDragLeave={() => setDropDay((current) => (current === item ? null : current))}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      setDropDay(null);
-                      const workoutId = Number(event.dataTransfer.getData("text/plain"));
-                      const workout = view?.workouts.find((entry) => entry.id === workoutId);
-                      if (!workout) return;
-                      void moveWorkout(workout, item);
-                    }}
                     aria-pressed={active}
-                    className={`mx-auto flex aspect-square w-full max-w-12 flex-col items-center justify-center rounded-full border text-center ${
+                    aria-label={`${WEEKDAYS[index]} ${date.getDate()}`}
+                    className={`mt-0.5 flex size-12 shrink-0 flex-col items-center justify-center rounded-full border text-center ${
                       active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-foreground hover:bg-muted"
-                    } ${dropDay === item ? "ring-2 ring-primary" : ""}`}
+                    }`}
                   >
-                    <span className="text-[9px] leading-none tracking-wide uppercase max-[380px]:hidden sm:text-[10px]">{WEEKDAYS[index]}</span>
-                    <span className="text-[10px] leading-none uppercase min-[381px]:hidden">{WEEKDAYS[index].slice(0, 1)}</span>
-                    <span className="text-xs font-medium leading-none sm:text-sm">{date.getDate()}</span>
+                    <span className="text-[10px] leading-none tracking-wide uppercase">{WEEKDAYS[index]}</span>
+                    <span className="text-sm font-medium leading-none">{date.getDate()}</span>
                     <span className={`mt-0.5 size-1 rounded-full ${hasWorkout ? (active ? "bg-primary-foreground" : "bg-primary") : "bg-transparent"}`} />
                   </button>
-                );
-              })}
+                  <div className="min-w-0 flex-1 space-y-3">
+                    {dayWorkoutsForRow.length === 0 ? (
+                      <p className="pt-3 text-sm text-muted-foreground">No workout is scheduled.</p>
+                    ) : dayWorkoutsForRow.map((workout, workoutIndex) => (
+                      <article
+                        key={workout.id}
+                        draggable={!moving && editingId !== workout.id}
+                        onDragStart={(event) => {
+                          event.dataTransfer.setData("text/plain", String(workout.id));
+                          event.dataTransfer.effectAllowed = "move";
+                        }}
+                        className={`text-sm ${workoutIndex > 0 ? "border-t border-border pt-3" : ""}`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex min-w-0 items-start gap-2">
+                            <GripVertical className="mt-0.5 size-4 shrink-0 cursor-grab text-muted-foreground" aria-hidden="true" />
+                            <div>
+                              <p className="font-medium">{workout.scheduled_date} · {workout.title}</p>
+                              {workout.details ? (
+                                <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{workout.details}</p>
+                              ) : (
+                                <p className="text-muted-foreground">
+                                  {(workout.workout_type || "unspecified").replaceAll("_", " ")}
+                                  {workout.distance_miles == null ? "" : ` · ${workout.distance_miles.toFixed(2)} mi`}
+                                  {workout.repetitions == null ? "" : ` · ${workout.repetitions} reps`}
+                                  {workout.target_pace ? ` · ${workout.target_pace}/mi` : ""}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <StatusPill status={workout.status} />
+                        </div>
+                        {workout.summary ? <p className="mt-2">{workout.summary}</p> : null}
+                        {workout.match ? (
+                          <p className="mt-1 text-muted-foreground">
+                            Matched {workout.match.source}: {" "}
+                            <Link href={`/activities/${workout.match.garmin_activity_id}?athlete=${athleteId}`} className="hover:underline">{workout.match.name || "Activity"}</Link>
+                          </p>
+                        ) : null}
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <Button type="button" variant="outline" size="sm" onClick={() => openEdit(workout)}>
+                            Edit workout
+                          </Button>
+                          {workout.revisions.length > 0 ? <span className="text-xs text-muted-foreground">{workout.revisions.length} earlier version{workout.revisions.length === 1 ? "" : "s"} kept</span> : null}
+                        </div>
+                        {editingId === workout.id && form ? (
+                          <form onSubmit={(event) => void onSave(event, workout)} className="mt-3 grid gap-3 border-t border-border pt-3 sm:grid-cols-2">
+                            <label className="text-sm">Date
+                              <input type="date" required value={form.scheduled_date} onChange={(event) => setForm({ ...form, scheduled_date: event.target.value })} className={fieldClass} />
+                            </label>
+                            <label className="text-sm">Name
+                              <input required value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} className={fieldClass} />
+                            </label>
+                            <label className="text-sm">Type
+                              <select value={form.workout_type} onChange={(event) => setForm({ ...form, workout_type: event.target.value })} className={fieldClass}>
+                                <option value="">Unspecified</option>
+                                {(form.workout_type && !WORKOUT_TYPES.includes(form.workout_type) ? [form.workout_type, ...WORKOUT_TYPES] : WORKOUT_TYPES).map((type) => (
+                                  <option key={type} value={type}>{type.replaceAll("_", " ")}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="text-sm">Distance, miles
+                              <input value={form.distance_miles} onChange={(event) => setForm({ ...form, distance_miles: event.target.value })} inputMode="decimal" className={fieldClass} />
+                            </label>
+                            <label className="text-sm">Target pace
+                              <input value={form.target_pace} onChange={(event) => setForm({ ...form, target_pace: event.target.value })} placeholder="8:00" className={fieldClass} />
+                            </label>
+                            <label className="text-sm sm:col-span-2">Prescription
+                              <textarea value={form.details} onChange={(event) => setForm({ ...form, details: event.target.value })} className={`${fieldClass} min-h-24`} />
+                            </label>
+                            <label className="text-sm sm:col-span-2">Coach notes
+                              <textarea value={form.coach_notes} onChange={(event) => setForm({ ...form, coach_notes: event.target.value })} className={`${fieldClass} min-h-16`} />
+                            </label>
+                            <div className="flex gap-2 sm:col-span-2">
+                              <Button type="submit" disabled={saving}>{saving ? "Saving" : "Save workout"}</Button>
+                              <Button type="button" variant="outline" onClick={() => { setEditingId(null); setForm(null); }}>Cancel</Button>
+                            </div>
+                          </form>
+                        ) : null}
+                      </article>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : null}
-
-      {selectedDay && dayWorkouts.length === 0 ? <p className="text-sm text-muted-foreground">No workout is scheduled for {dayLabel(selectedDay)}.</p> : null}
-      {dayWorkouts.length > 0 ? <p className="text-xs text-muted-foreground">Drag a workout onto another day to reschedule it.</p> : null}
-      <ul className="space-y-3">
-        {dayWorkouts.map((workout) => (
-          <li
-            key={workout.id}
-            draggable={!moving && editingId !== workout.id}
-            onDragStart={(event) => {
-              event.dataTransfer.setData("text/plain", String(workout.id));
-              event.dataTransfer.effectAllowed = "move";
-            }}
-            className="rounded-xl border border-border p-3 text-sm"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex min-w-0 items-start gap-2">
-                <GripVertical className="mt-0.5 size-4 shrink-0 cursor-grab text-muted-foreground" aria-hidden="true" />
-                <div>
-                <p className="font-medium">{workout.scheduled_date} · {workout.title}</p>
-                {workout.details ? (
-                  <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{workout.details}</p>
-                ) : (
-                  <p className="text-muted-foreground">
-                    {(workout.workout_type || "unspecified").replaceAll("_", " ")}
-                    {workout.distance_miles == null ? "" : ` · ${workout.distance_miles.toFixed(2)} mi`}
-                    {workout.repetitions == null ? "" : ` · ${workout.repetitions} reps`}
-                    {workout.target_pace ? ` · ${workout.target_pace}/mi` : ""}
-                  </p>
-                )}
-                </div>
-              </div>
-              <StatusPill status={workout.status} />
-            </div>
-            {workout.summary ? <p className="mt-2">{workout.summary}</p> : null}
-            {workout.match ? (
-              <p className="mt-1 text-muted-foreground">
-                Matched {workout.match.source}: {" "}
-                <Link href={`/activities/${workout.match.garmin_activity_id}?athlete=${athleteId}`} className="hover:underline">{workout.match.name || "Activity"}</Link>
-              </p>
-            ) : null}
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => openEdit(workout)}>
-                Edit workout
-              </Button>
-              {workout.revisions.length > 0 ? <span className="text-xs text-muted-foreground">{workout.revisions.length} earlier version{workout.revisions.length === 1 ? "" : "s"} kept</span> : null}
-            </div>
-            {editingId === workout.id && form ? (
-              <form onSubmit={(event) => void onSave(event, workout)} className="mt-3 grid gap-3 border-t border-border pt-3 sm:grid-cols-2">
-                <label className="text-sm">Date
-                  <input type="date" required value={form.scheduled_date} onChange={(event) => setForm({ ...form, scheduled_date: event.target.value })} className={fieldClass} />
-                </label>
-                <label className="text-sm">Name
-                  <input required value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} className={fieldClass} />
-                </label>
-                <label className="text-sm">Type
-                  <select value={form.workout_type} onChange={(event) => setForm({ ...form, workout_type: event.target.value })} className={fieldClass}>
-                    <option value="">Unspecified</option>
-                    {(form.workout_type && !WORKOUT_TYPES.includes(form.workout_type) ? [form.workout_type, ...WORKOUT_TYPES] : WORKOUT_TYPES).map((type) => (
-                      <option key={type} value={type}>{type.replaceAll("_", " ")}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="text-sm">Distance, miles
-                  <input value={form.distance_miles} onChange={(event) => setForm({ ...form, distance_miles: event.target.value })} inputMode="decimal" className={fieldClass} />
-                </label>
-                <label className="text-sm">Target pace
-                  <input value={form.target_pace} onChange={(event) => setForm({ ...form, target_pace: event.target.value })} placeholder="8:00" className={fieldClass} />
-                </label>
-                <label className="text-sm sm:col-span-2">Prescription
-                  <textarea value={form.details} onChange={(event) => setForm({ ...form, details: event.target.value })} className={`${fieldClass} min-h-24`} />
-                </label>
-                <label className="text-sm sm:col-span-2">Coach notes
-                  <textarea value={form.coach_notes} onChange={(event) => setForm({ ...form, coach_notes: event.target.value })} className={`${fieldClass} min-h-16`} />
-                </label>
-                <div className="flex gap-2 sm:col-span-2">
-                  <Button type="submit" disabled={saving}>{saving ? "Saving" : "Save workout"}</Button>
-                  <Button type="button" variant="outline" onClick={() => { setEditingId(null); setForm(null); }}>Cancel</Button>
-                </div>
-              </form>
-            ) : null}
-          </li>
-        ))}
-      </ul>
     </div>
-  );
-}
-
-function paceText(seconds: number | null | undefined) {
-  if (seconds == null || !Number.isFinite(seconds)) return "";
-  const rounded = Math.round(seconds);
-  return `${Math.floor(rounded / 60)}:${String(rounded % 60).padStart(2, "0")}`;
-}
-
-function paceSeconds(value: string) {
-  const text = value.trim().toLowerCase().replace("/mi", "").replace("per mile", "").trim();
-  if (!text) return null;
-  const clock = /^(\d+):(\d{1,2})$/.exec(text);
-  if (clock) {
-    const seconds = Number(clock[1]) * 60 + Number(clock[2]);
-    return Number(clock[2]) > 59 || seconds <= 0 ? Number.NaN : seconds;
-  }
-  if (/^\d+(\.\d+)?$/.test(text)) {
-    const seconds = Number(text);
-    return seconds > 0 ? seconds : Number.NaN;
-  }
-  return Number.NaN;
-}
-
-function TrainingPaces({ athleteId }: { athleteId: number }) {
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [heart, setHeart] = useState<Record<string, number | null>>({});
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-
-  const load = useCallback(async () => {
-    const athlete = await getAthleteById(athleteId);
-    const next: Record<string, string> = {};
-    const rates: Record<string, number | null> = {};
-    for (const field of TRAINING_PACES) {
-      const row = athlete.thresholds?.find((item) => item.name === field.name);
-      next[field.name] = paceText(row?.pace_seconds_per_mile);
-      rates[field.name] = row?.heart_rate_bpm ?? null;
-    }
-    setValues(next);
-    setHeart(rates);
-  }, [athleteId]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void load().catch((loadError: unknown) => setError(errorMessage(loadError)));
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [load]);
-
-  async function onSave(event: FormEvent) {
-    event.preventDefault();
-    const thresholds = [];
-    for (const field of TRAINING_PACES) {
-      const seconds = paceSeconds(values[field.name] ?? "");
-      if (Number.isNaN(seconds)) {
-        setSaved(false);
-        setError(`${field.label} needs a pace like 7:30.`);
-        return;
-      }
-      thresholds.push({
-        name: field.name,
-        pace_seconds_per_mile: seconds,
-        heart_rate_bpm: heart[field.name] ?? null,
-      });
-    }
-    setSaving(true);
-    setError(null);
-    setSaved(false);
-    try {
-      const athlete = await updateAthleteById(athleteId, { thresholds });
-      const next: Record<string, string> = {};
-      const rates: Record<string, number | null> = {};
-      for (const field of TRAINING_PACES) {
-        const row = athlete.thresholds?.find((item) => item.name === field.name);
-        next[field.name] = paceText(row?.pace_seconds_per_mile);
-        rates[field.name] = row?.heart_rate_bpm ?? null;
-      }
-      setValues(next);
-      setHeart(rates);
-      setSaved(true);
-    } catch (saveError: unknown) {
-      setError(errorMessage(saveError));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Training paces</CardTitle>
-        <CardDescription>Minutes per mile. Threshold is the pace a workout is compared against.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={(event) => void onSave(event)} className="grid gap-3 sm:grid-cols-5">
-          {TRAINING_PACES.map((field) => (
-            <label key={field.name} className="text-sm">
-              {field.label}
-              <input
-                value={values[field.name] ?? ""}
-                onChange={(event) => {
-                  setSaved(false);
-                  setValues((current) => ({ ...current, [field.name]: event.target.value }));
-                }}
-                placeholder="7:30"
-                inputMode="decimal"
-                className={fieldClass}
-              />
-            </label>
-          ))}
-          <div className="flex items-center gap-3 sm:col-span-5">
-            <Button type="submit" disabled={saving}>{saving ? "Saving…" : "Save paces"}</Button>
-            {saved ? <p className="text-sm text-muted-foreground">Saved.</p> : null}
-          </div>
-          {error ? <p className="text-sm text-destructive sm:col-span-5">{error}</p> : null}
-        </form>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -521,10 +413,14 @@ function parseDay(iso: string): Date {
   return new Date(year, (month || 1) - 1, day || 1);
 }
 
-function dayLabel(iso: string): string {
-  const date = parseDay(iso);
-  const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][date.getDay()];
-  return `${weekday}, ${MONTHS[date.getMonth()]} ${date.getDate()}`;
+function weekRangeLabel(start: string) {
+  const begin = parseDay(start);
+  const end = parseDay(addDays(start, 6));
+  const left = `${MONTHS[begin.getMonth()].slice(0, 3)} ${begin.getDate()}`;
+  const right = begin.getMonth() === end.getMonth()
+    ? String(end.getDate())
+    : `${MONTHS[end.getMonth()].slice(0, 3)} ${end.getDate()}`;
+  return `${left} – ${right}`;
 }
 
 function addDays(iso: string, days: number) {

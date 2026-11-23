@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { MileageChart } from "@/lib/api";
 
@@ -27,14 +27,24 @@ function hoursLabel(seconds: number | null): string {
   return `${minutes}m`;
 }
 
-function monthTick(iso: string, previous: string | null): string {
-  const date = parseDay(iso);
-  const month = date.toLocaleDateString("en-US", { month: "short" });
-  if (!previous) return `${month} ${date.getFullYear()}`;
-  const prior = parseDay(previous);
-  if (prior.getFullYear() === date.getFullYear() && prior.getMonth() === date.getMonth()) return "";
-  if (prior.getFullYear() !== date.getFullYear()) return `${month} ${date.getFullYear()}`;
-  return month;
+function weekRange(start: string, end: string): string {
+  const startDate = parseDay(start);
+  const endDate = parseDay(end);
+  const monthDay = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+  if (startDate.getFullYear() === endDate.getFullYear() && startDate.getMonth() === endDate.getMonth()) {
+    return `${monthDay.format(startDate)} – ${endDate.getDate()}`;
+  }
+  return `${monthDay.format(startDate)} – ${monthDay.format(endDate)}`;
+}
+
+function weekTick(iso: string): string {
+  return parseDay(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function labelStep(count: number, width: number): number {
+  const room = width > 0 ? width : 360;
+  const fit = Math.max(1, Math.floor(room / 40));
+  return Math.max(1, Math.ceil(count / fit));
 }
 
 function runTick(local: string | null): string {
@@ -47,10 +57,23 @@ function runTick(local: string | null): string {
 
 export function MileageHistory({ chart, athleteId }: { chart: MileageChart; athleteId?: number | null }) {
   const router = useRouter();
+  const chartFrame = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<"weeks" | "runs">("weeks");
+  const [chartWidth, setChartWidth] = useState(0);
+  useEffect(() => {
+    const node = chartFrame.current;
+    if (!node) return;
+    const update = () => setChartWidth(node.clientWidth);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  const step = labelStep(chart.weeks.length, chartWidth);
   const weekPoints = chart.weeks.map((week, index) => ({
     id: week.week_start,
-    label: monthTick(week.week_start, index === 0 ? null : chart.weeks[index - 1].week_start),
+    label: index % step === 0 || week.current ? weekTick(week.week_start) : "",
+    range: weekRange(week.week_start, week.week_end),
     miles: week.distance_miles ?? 0,
     current: week.current,
     detail: week.activity_count === 1 ? "1 run" : `${week.activity_count} runs`,
@@ -59,6 +82,7 @@ export function MileageHistory({ chart, athleteId }: { chart: MileageChart; athl
   const runPoints = chart.runs.map((run) => ({
     id: `run-${run.garmin_activity_id}`,
     label: runTick(run.start_time_local),
+    range: runTick(run.start_time_local),
     miles: run.distance_miles ?? 0,
     current: true,
     detail: run.name || "Activity",
@@ -68,7 +92,7 @@ export function MileageHistory({ chart, athleteId }: { chart: MileageChart; athl
   const hasMiles = points.some((point) => point.miles > 0);
 
   return (
-    <div className="space-y-4">
+    <div ref={chartFrame} className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-sm font-medium">Activities for {rangeLabel(chart.week_start, chart.week_end)}</p>
@@ -113,11 +137,20 @@ export function MileageHistory({ chart, athleteId }: { chart: MileageChart; athl
                 tickLine={false}
                 axisLine={false}
                 interval={0}
+                height={view === "weeks" ? 52 : 30}
                 tick={(tick) => {
                   const label = points[tick.index]?.label ?? "";
                   if (!label) return <g />;
+                  if (view === "runs") {
+                    return (
+                      <text x={tick.x} y={tick.y} dy={12} textAnchor="middle" fontSize={11} fill="currentColor">
+                        {label}
+                      </text>
+                    );
+                  }
+                  const y = Number(tick.y) + 8;
                   return (
-                    <text x={tick.x} y={tick.y} dy={12} textAnchor="middle" fontSize={11} fill="currentColor">
+                    <text x={tick.x} y={y} textAnchor="end" fontSize={10} fill="currentColor" transform={`rotate(-40 ${tick.x} ${y})`}>
                       {label}
                     </text>
                   );
@@ -126,10 +159,11 @@ export function MileageHistory({ chart, athleteId }: { chart: MileageChart; athl
               <YAxis tickLine={false} axisLine={false} width={36} domain={[0, "auto"]} tick={{ fontSize: 11 }} />
               <Tooltip
                 content={({ active, payload }) => {
-                  const point = payload?.[0]?.payload as { detail?: string; miles?: number } | undefined;
+                  const point = payload?.[0]?.payload as { detail?: string; miles?: number; range?: string } | undefined;
                   if (!active || !point || typeof point.miles !== "number") return null;
                   return (
                     <div className="rounded-md border border-border bg-card px-3 py-2 text-sm shadow-sm">
+                      {point.range ? <p className="font-medium">{point.range}</p> : null}
                       <p>{point.detail}</p>
                       <p>Distance: {point.miles.toFixed(1)} mi</p>
                     </div>

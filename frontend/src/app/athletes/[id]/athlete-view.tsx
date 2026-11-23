@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { MessageThread } from "@/components/message-thread";
 import { TrainingPlan } from "@/components/training-plan";
+import { TrainingZones } from "@/components/training-zones";
 import { AthleteRaces } from "@/components/athlete-races";
 import { AthleteStats } from "@/components/athlete-stats";
 import { MileageHistory } from "@/components/mileage-history";
@@ -30,6 +31,7 @@ const TABS = [
   { id: "overview", label: "Overview" },
   { id: "activities", label: "Activities" },
   { id: "plan", label: "Training Plan" },
+  { id: "zones", label: "Training Zones" },
 ];
 
 export default function AthletePage() {
@@ -232,6 +234,7 @@ export default function AthletePage() {
       ) : null}
 
       {ready && section === "plan" ? <TrainingPlan athleteId={athleteId} focusDay={search.get("day")} /> : null}
+      {ready && section === "zones" ? <TrainingZones athleteId={athleteId} /> : null}
     </div>
   );
 }
