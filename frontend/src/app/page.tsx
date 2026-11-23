@@ -407,7 +407,7 @@ function AnalysisModal({
         const result = await createReport(garminId, athleteId);
         if (!active) return;
         setReport(result.report);
-        saved.current(garminId, athleteId, result.report);
+        if (result.report) saved.current(garminId, athleteId, result.report);
       })
       .catch((loadError: unknown) => {
         if (active) setError(errorMessage(loadError));
@@ -429,7 +429,7 @@ function AnalysisModal({
     try {
       const result = await createReport(garminId, athleteId);
       setReport(result.report);
-      saved.current(garminId, athleteId, result.report);
+      if (result.report) saved.current(garminId, athleteId, result.report);
     } catch (writeError) {
       setError(errorMessage(writeError));
     } finally {

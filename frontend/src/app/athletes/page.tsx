@@ -32,7 +32,8 @@ function weekMileage(today: string, athlete: RosterAthlete, activities: Activity
     if (activity.athlete_id !== athlete.id || !activity.start_time_local) continue;
     const index = days.indexOf(activity.start_time_local.slice(0, 10));
     if (index < 0) continue;
-    const distance = activity.distance_miles ?? (activity.distance_meters == null ? null : activity.distance_meters / METERS_PER_MILE);
+    const recorded = "distance_miles" in activity ? activity.distance_miles : null;
+    const distance = typeof recorded === "number" ? recorded : activity.distance_meters == null ? null : activity.distance_meters / METERS_PER_MILE;
     if (distance != null) miles[index] += distance;
   }
   const total = miles.reduce((sum, value) => sum + value, 0);
