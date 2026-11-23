@@ -231,7 +231,7 @@ export default function AthletePage() {
         </Card>
       ) : null}
 
-      {ready && section === "plan" ? <TrainingPlan athleteId={athleteId} /> : null}
+      {ready && section === "plan" ? <TrainingPlan athleteId={athleteId} focusDay={search.get("day")} /> : null}
     </div>
   );
 }

@@ -32,7 +32,7 @@ type WorkoutForm = {
   coach_notes: string;
 };
 
-export function TrainingPlan({ athleteId }: { athleteId: number }) {
+export function TrainingPlan({ athleteId, focusDay }: { athleteId: number; focusDay?: string | null }) {
   const [view, setView] = useState<PlanView | null>(null);
   const [week, setWeek] = useState<string | null>(null);
   const [day, setDay] = useState<string | null>(null);
@@ -41,13 +41,14 @@ export function TrainingPlan({ athleteId }: { athleteId: number }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async (focusDay?: string) => {
+  const load = useCallback(async (focus?: string) => {
     const plan = await getAthletePlan(athleteId);
     setView(plan);
     const today = todayIso();
-    setWeek((current) => (focusDay ? weekFor(plan.weeks, focusDay) ?? current : current ?? weekFor(plan.weeks, today)));
+    const target = focus || focusDay || undefined;
+    setWeek((current) => (target ? weekFor(plan.weeks, target) ?? current : current ?? weekFor(plan.weeks, today)));
     setDay((current) => {
-      if (focusDay) return focusDay;
+      if (target) return target;
       if (current) return current;
       const start = weekFor(plan.weeks, today);
       if (!start) return null;
@@ -62,7 +63,7 @@ export function TrainingPlan({ athleteId }: { athleteId: number }) {
         // The local plan still renders. Saving a workout reports an account error.
       }
     }
-  }, [athleteId]);
+  }, [athleteId, focusDay]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {

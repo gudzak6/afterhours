@@ -281,7 +281,7 @@ function reviewLine(count: number) {
   return `${label} activities recorded. Review ${together} together for the day's coaching assessment.`;
 }
 
-function AthletePanel({ group, open, onToggle }: { group: AthleteDay; open: boolean; onToggle: () => void }) {
+function AthletePanel({ group, open, onToggle, planHref }: { group: AthleteDay; open: boolean; onToggle: () => void; planHref: string | null }) {
   const status = dayStatus(group);
   const miles = totalMiles(group.activities);
   const milesText = miles == null ? null : `${miles.toFixed(2)} mi`;
@@ -316,7 +316,18 @@ function AthletePanel({ group, open, onToggle }: { group: AthleteDay; open: bool
             </Link>
             {status === "Unplanned" ? null : <span className={`text-sm ${statusClass}`}>{status}</span>}
           </span>
-          <span className="mt-0.5 block text-sm text-muted-foreground">{summary}</span>
+          <span className="mt-0.5 block text-sm text-muted-foreground">
+            {planHref ? (
+              <>
+                <Link href={planHref} onClick={(event) => event.stopPropagation()} className="hover:text-foreground hover:underline">
+                  {planText}
+                </Link>
+                {group.activities.length === 0
+                  ? " · No activity yet"
+                  : ` · ${milesText ?? "Distance unavailable"}${group.activities.length === 1 ? "" : ` · ${group.activities.length} runs`}`}
+              </>
+            ) : summary}
+          </span>
         </span>
         {open ? <ChevronUp className="mt-1 size-4 shrink-0 text-muted-foreground" /> : <ChevronDown className="mt-1 size-4 shrink-0 text-muted-foreground" />}
       </div>
@@ -328,7 +339,11 @@ function AthletePanel({ group, open, onToggle }: { group: AthleteDay; open: bool
                 <Calendar className="size-3.5" />
                 Planned
               </p>
-              <p className="mt-2 font-semibold">{group.planned.length === 0 ? "No workout assigned" : planText}</p>
+              <p className="mt-2 font-semibold">
+                {group.planned.length === 0 ? "No workout assigned" : planHref ? (
+                  <Link href={planHref} className="hover:underline">{planText}</Link>
+                ) : planText}
+              </p>
               <p className="mt-1 text-sm text-muted-foreground">
                 {group.planned.length === 0 ? "No prescribed workout to compare against." : "The workout stored for this day."}
               </p>
@@ -615,6 +630,7 @@ export default function DashboardPage() {
                     <AthletePanel
                       key={group.athleteId}
                       group={group}
+                      planHref={selectedDay > dashboard.today && group.planned.length > 0 ? `/athletes/${group.athleteId}?section=plan&day=${selectedDay}` : null}
                       open={openAthletes.includes(group.athleteId)}
                       onToggle={() =>
                         setOpenAthletes((current) =>

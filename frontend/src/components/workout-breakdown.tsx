@@ -50,21 +50,9 @@ function miles(meters: number | null): string | null {
 
 export function WorkoutBreakdown({ metrics }: { metrics: Record<string, unknown> }) {
   const breakdown = workoutBreakdown(metrics);
-  if (!breakdown) {
-    if (metrics.workout_intelligence) {
-      return null;
-    }
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Workout reps</CardTitle>
-          <CardDescription>This recording does not split into repeated faster efforts.</CardDescription>
-        </CardHeader>
-      </Card>
-    );
+  if (!breakdown || breakdown.kind !== "miles") {
+    return null;
   }
-  const mileSplits = breakdown.kind === "miles";
-  const sprintEfforts = breakdown.kind === "sprints";
   const showJog = breakdown.repetitions.some((rep) => rep.recovery_seconds != null && rep.recovery_seconds >= 15);
   const disagreed = breakdown.repetitions.filter((rep) => rep.sample_pace_seconds_per_mile != null);
   const before = miles(breakdown.warmup_meters);
@@ -77,17 +65,10 @@ export function WorkoutBreakdown({ metrics }: { metrics: Record<string, unknown>
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{mileSplits ? "Miles" : "Workout reps"}</CardTitle>
-        <CardDescription>
-          {mileSplits
-            ? "Each row is one watch mile. The pace is the lap time, not a recalculation from the GPS trace."
-            : sprintEfforts
-              ? "Each pace is the watch lap for that short effort."
-              : "Each pace is the fast portion of that rep. A mile auto-lap does not split a rep that stays fast."}
-        </CardDescription>
+        <CardTitle>Miles</CardTitle>
+        <CardDescription>Each row is one watch mile. The pace is the lap time, not a recalculation from the GPS trace.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
-        {mileSplits ? null : <p className="font-heading text-2xl tracking-tight">{breakdown.label}</p>}
         {context.length > 0 ? <p className="text-sm text-muted-foreground">{context.join(" · ")}</p> : null}
         {disagreed.length > 0 ? (
           <p className="text-sm text-muted-foreground">
@@ -119,7 +100,7 @@ export function WorkoutBreakdown({ metrics }: { metrics: Record<string, unknown>
                 <table className="w-full text-left text-sm">
                   <thead className="text-xs tracking-wide text-muted-foreground uppercase">
                     <tr className="border-b border-border">
-                      <th className="px-2 py-2">{mileSplits ? "Mile" : "Rep"}</th>
+                      <th className="px-2 py-2">Mile</th>
                       <th className="px-2 py-2">Time</th>
                       <th className="px-2 py-2">Pace</th>
                       <th className="px-2 py-2">Heart rate</th>

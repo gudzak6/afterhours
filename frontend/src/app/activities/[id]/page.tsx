@@ -146,9 +146,6 @@ export default function ActivityDetailPage() {
             {busy === "report" ? "Writing…" : report ? "Generate again" : "Generate analysis"}
           </Button>
           {report ? <CoachingReport report={report} /> : <p className="text-muted-foreground">No report stored.</p>}
-          <Link href={`/agent?activity=${activity.garmin_activity_id}${activity.athlete_id == null ? "" : `&athlete=${activity.athlete_id}`}`} className="underline">
-            Ask the agent about this activity
-          </Link>
         </CardContent>
       </Card>
 
