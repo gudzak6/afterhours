@@ -21,6 +21,7 @@ from app.models import (
     CoachMessage,
     GarminConnection,
     LactateReading,
+    PlanRevision,
     Race,
     ScheduledWorkout,
     SyncJob,
@@ -30,7 +31,7 @@ from app.models import (
     WorkoutFeedback,
 )
 from app.schemas import AthleteIntake, AthleteUpdate
-from app.services.adherence import _local_day, load_plan_view
+from app.services.adherence import _local_day, load_plan_view, prescription_snapshot
 from app.services.efforts import running_stats
 from app.services.history import weekly_mileage
 from app.services.sync import ensure_coach
@@ -293,7 +294,7 @@ def home(session: Session, settings: Settings, athlete: Athlete) -> dict:
         "name": first or athlete.display_name,
         "workouts": today_workouts,
         "activities": today_runs,
-        "recent": recent_runs(session, athlete.id),
+        "recent": recent_runs(session, athlete.id, 5),
         "week": view.get("current_week"),
         "upcoming": upcoming,
         "goal": {
@@ -358,6 +359,43 @@ def week_view(session: Session, settings: Settings, athlete: Athlete) -> dict:
     view = _plan(session, athlete.id, today)
     view["today"] = today.isoformat()
     return view
+
+
+def _short_day(day: date) -> str:
+    return f"{day.strftime('%b')} {day.day}"
+
+
+def reschedule_workouts(session: Session, athlete: Athlete, moves: list[tuple[int, date]]) -> dict:
+    """Move workouts onto new days and tell the coach in the message thread."""
+    if not moves:
+        raise PortalInputError("Move a workout before saving.")
+    changes: list[str] = []
+    for plan_id, new_day in moves:
+        row = session.get(ScheduledWorkout, plan_id)
+        if row is None or row.athlete_id != athlete.id:
+            raise PortalInputError("That workout is not on your plan.")
+        if row.scheduled_date == new_day:
+            continue
+        previous = prescription_snapshot(row)
+        if row.original_prescription is None:
+            row.original_prescription = previous
+        session.add(PlanRevision(scheduled_workout_id=row.id, prescription=previous, created_at=datetime.now(UTC)))
+        changes.append(f"{row.title}: {_short_day(row.scheduled_date)} to {_short_day(new_day)}")
+        row.scheduled_date = new_day
+        row.updated_at = datetime.now(UTC)
+    if not changes:
+        raise PortalInputError("Those workouts are already on those days.")
+    name = athlete.display_name.strip() or "Athlete"
+    session.add(
+        CoachMessage(
+            athlete_id=athlete.id,
+            author="athlete",
+            body=f"Schedule change from {name}\n" + "\n".join(changes),
+            created_at=datetime.now(UTC),
+        )
+    )
+    session.commit()
+    return {"updated": len(changes)}
 
 
 def workout_detail(session: Session, settings: Settings, athlete: Athlete, plan_id: int) -> dict | None:

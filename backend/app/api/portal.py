@@ -28,6 +28,7 @@ from app.services.portal import (
     goals_payload,
     home,
     recent_runs,
+    reschedule_workouts,
     intake_complete,
     join_athlete,
     log_manual,
@@ -107,6 +108,15 @@ class CommentIn(BaseModel):
     body: str
     scheduled_workout_id: int | None = None
     garmin_activity_id: int | None = None
+
+
+class RescheduleMove(BaseModel):
+    id: int
+    scheduled_date: date
+
+
+class RescheduleIn(BaseModel):
+    moves: list[RescheduleMove] = Field(min_length=1)
 
 
 class MessageIn(BaseModel):
@@ -260,6 +270,23 @@ def portal_calendar(
 @router.get("/api/portal/{athlete_id}/week")
 def portal_week(athlete_id: int, db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> dict:
     return week_view(db, settings, _athlete(db, settings, athlete_id))
+
+
+@router.post("/api/portal/{athlete_id}/plan/reschedule")
+def portal_reschedule(
+    athlete_id: int,
+    body: RescheduleIn,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    try:
+        return reschedule_workouts(
+            db,
+            _athlete(db, settings, athlete_id),
+            [(move.id, move.scheduled_date) for move in body.moves],
+        )
+    except PortalInputError as exc:
+        raise _input(exc) from exc
 
 
 @router.get("/api/portal/{athlete_id}/workouts/{plan_id}")

@@ -117,19 +117,7 @@ export function AthleteFrame({ children }: { children: React.ReactNode }) {
   }
   return (
     <AthleteContext.Provider value={{ athleteId, status, reload, openGarmin: () => setPhase("connect") }}>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
-        <p><AthleteName name={status.athlete.display_name} /> · Coach Owen</p>
-        <button
-          type="button"
-          className="underline"
-          onClick={() => {
-            window.sessionStorage.removeItem(SKIP_KEY);
-            setPhase("connect");
-          }}
-        >
-          Reconnect Garmin
-        </button>
-      </div>
+      <p className="mb-6 text-sm text-muted-foreground"><AthleteName name={status.athlete.display_name} /> · Coach Owen</p>
       {children}
     </AthleteContext.Provider>
   );

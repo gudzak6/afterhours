@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { AthleteTrainingPlan } from "@/components/athlete-training-plan";
+import { AthleteWeekEditor } from "@/components/athlete-week-editor";
 import { useAthlete } from "@/components/athlete-frame";
 import { errorMessage, getAthleteCalendar, type CalendarDay } from "@/lib/api";
 
@@ -23,6 +25,8 @@ export default function AthleteCalendarPage() {
   const [days, setDays] = useState<CalendarDay[]>([]);
   const [today, setToday] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<"calendar" | "week">("week");
+  const [planOpen, setPlanOpen] = useState(false);
 
   const load = useCallback(async (value: string) => {
     const calendar = await getAthleteCalendar(athleteId, value);
@@ -38,22 +42,50 @@ export default function AthleteCalendarPage() {
     return () => window.clearTimeout(timer);
   }, [load, month]);
 
+  useEffect(() => {
+    if (window.location.hash === "#training-plan") setPlanOpen(true);
+  }, []);
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="font-heading text-2xl tracking-tight sm:text-3xl">Calendar</h1>
-        <div className="flex items-center gap-2">
-          <button type="button" aria-label="Previous month" onClick={() => setMonth((current) => shiftMonth(current, -1))} className="rounded-full border border-border p-2">
-            <ChevronLeft className="size-4" />
-          </button>
-          <p className="min-w-28 text-center text-sm">{month}</p>
-          <button type="button" aria-label="Next month" onClick={() => setMonth((current) => shiftMonth(current, 1))} className="rounded-full border border-border p-2">
-            <ChevronRight className="size-4" />
-          </button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+          <div className="grid grid-cols-2 rounded-lg border border-border p-1 sm:flex">
+            <button
+              type="button"
+              aria-pressed={mode === "calendar"}
+              onClick={() => setMode("calendar")}
+              className={`min-h-11 rounded-md px-3 text-sm sm:min-h-0 sm:py-1.5 ${mode === "calendar" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
+            >
+              Calendar
+            </button>
+            <button
+              type="button"
+              aria-pressed={mode === "week"}
+              onClick={() => setMode("week")}
+              className={`min-h-11 rounded-md px-3 text-sm sm:min-h-0 sm:py-1.5 ${mode === "week" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
+            >
+              Week
+            </button>
+          </div>
+          {mode === "calendar" ? (
+            <div className="flex items-center justify-between gap-2 sm:justify-start">
+              <button type="button" aria-label="Previous month" onClick={() => setMonth((current) => shiftMonth(current, -1))} className="inline-flex size-11 items-center justify-center rounded-full border border-border">
+                <ChevronLeft className="size-4" />
+              </button>
+              <p className="min-w-28 text-center text-sm">{month}</p>
+              <button type="button" aria-label="Next month" onClick={() => setMonth((current) => shiftMonth(current, 1))} className="inline-flex size-11 items-center justify-center rounded-full border border-border">
+                <ChevronRight className="size-4" />
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      <div className="grid grid-cols-7 gap-1 text-center text-[10px] tracking-wide text-muted-foreground uppercase sm:gap-2 sm:text-[11px]">
+      {mode === "week" ? <AthleteWeekEditor athleteId={athleteId} /> : (
+      <>
+      <div className="grid grid-cols-7 gap-1 text-center text-[10px] tracking-wide text-muted-foreground uppercase sm:gap-2 sm:text-xs">
         {WEEKDAYS.map((day) => (
           <div key={day}>
             <span className="sm:hidden">{day.slice(0, 1)}</span>
@@ -63,7 +95,7 @@ export default function AthleteCalendarPage() {
       </div>
       <div className="grid grid-cols-7 gap-1 sm:gap-2">
         {days.map((day) => (
-          <div key={day.date} className={`min-h-16 rounded-lg border p-1 text-[10px] sm:min-h-28 sm:rounded-xl sm:p-2 sm:text-xs ${day.date === today ? "border-primary" : "border-border"} ${day.in_month ? "bg-card" : "opacity-50"}`}>
+          <div key={day.date} className={`min-h-20 rounded-lg border p-1 text-[10px] leading-tight sm:min-h-28 sm:rounded-xl sm:p-2 sm:text-xs ${day.date === today ? "border-primary" : "border-border"} ${day.in_month ? "bg-card" : "opacity-50"}`}>
             <p className="font-medium">{Number(day.date.slice(8))}</p>
             <div className="mt-1 space-y-1">
               {day.workouts.map((workout) => (
@@ -80,6 +112,24 @@ export default function AthleteCalendarPage() {
           </div>
         ))}
       </div>
+      </>
+      )}
+      <details
+        id="training-plan"
+        open={planOpen}
+        onToggle={(event) => setPlanOpen(event.currentTarget.open)}
+        className="group rounded-xl border border-border bg-card"
+      >
+        <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden">
+          <span className="font-heading text-xl tracking-tight">Training plan</span>
+          <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+        </summary>
+        {planOpen ? (
+          <div className="border-t border-border px-3 py-4 sm:px-4">
+            <AthleteTrainingPlan athleteId={athleteId} />
+          </div>
+        ) : null}
+      </details>
     </div>
   );
 }

@@ -260,7 +260,7 @@ export function TrainingPlan({ athleteId, focusDay }: { athleteId: number; focus
             </div>
             <p className="text-center text-xs tracking-[0.08em] text-muted-foreground uppercase sm:tracking-[0.16em]">{weekRangeLabel(selected.week_start)}</p>
           </div>
-          <p className="text-xs text-muted-foreground">Drag a workout onto another day to reschedule it.</p>
+          <p className="text-xs text-muted-foreground">Drag a workout onto another day to reschedule it. Moving a workout will reflect on the athlete&apos;s schedule after saving.</p>
           <div className="space-y-3">
             {days.map((item, index) => {
               const date = parseDay(item);

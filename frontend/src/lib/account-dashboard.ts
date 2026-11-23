@@ -115,6 +115,22 @@ function weekContaining(iso: string) {
   return { start, end: selected.toISOString().slice(0, 10) };
 }
 
+function scheduleWindow(iso: string) {
+  const sunday = weekContaining(iso);
+  const [year, month, day] = iso.split("-").map(Number);
+  const selected = new Date(Date.UTC(year, (month || 1) - 1, day || 1));
+  const monday = new Date(selected);
+  monday.setUTCDate(selected.getUTCDate() - ((selected.getUTCDay() + 6) % 7));
+  const mondayEnd = new Date(monday);
+  mondayEnd.setUTCDate(monday.getUTCDate() + 7);
+  const mondayStart = monday.toISOString().slice(0, 10);
+  const mondayStop = mondayEnd.toISOString().slice(0, 10);
+  return {
+    start: sunday.start < mondayStart ? sunday.start : mondayStart,
+    end: sunday.end > mondayStop ? sunday.end : mondayStop,
+  };
+}
+
 function planDetail(plan: PlanRow) {
   const bits: string[] = [];
   if (plan.workout_type) bits.push(plan.workout_type.replaceAll("_", " "));
@@ -179,6 +195,7 @@ export async function loadAccountDashboard(supabase: SupabaseClient, day?: strin
   const today = todayInTimeZone(coach.timezone);
   const selected = day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : today;
   const week = weekContaining(selected);
+  const span = scheduleWindow(selected);
   const supabaseIds = rows.map((row) => row.id);
   const [goals, plans, activities] = await Promise.all([
     readableRows<GoalRow>(supabase.from("training_goals").select("athlete_id, primary_race_goal").in("athlete_id", supabaseIds)),
@@ -187,8 +204,8 @@ export async function loadAccountDashboard(supabase: SupabaseClient, day?: strin
         .from("scheduled_workouts")
         .select("id, athlete_id, scheduled_date, title, workout_type, distance_miles, repetitions, rep_distance_miles, target_pace, intensity")
         .in("athlete_id", supabaseIds)
-        .gte("scheduled_date", week.start)
-        .lt("scheduled_date", week.end)
+        .gte("scheduled_date", span.start)
+        .lt("scheduled_date", span.end)
         .order("scheduled_date"),
     ),
     optionalRows<ActivityRow>(
@@ -196,8 +213,8 @@ export async function loadAccountDashboard(supabase: SupabaseClient, day?: strin
         .from("activities")
         .select("athlete_id, garmin_activity_id, name, start_time_local, distance_meters, duration_seconds, average_speed_mps, location_name")
         .in("athlete_id", supabaseIds)
-        .gte("start_time_local", week.start)
-        .lt("start_time_local", week.end)
+        .gte("start_time_local", span.start)
+        .lt("start_time_local", span.end)
         .order("start_time_local", { ascending: false }),
     ),
   ]);

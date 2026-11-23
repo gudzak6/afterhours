@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useAthlete } from "@/components/athlete-frame";
+import { BestEfforts } from "@/components/athlete-stats";
 import { fieldClass, milesLabel, paceLabel } from "@/components/athlete-ui";
 import { WeeklyChart } from "@/components/weekly-chart";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { errorMessage, getAthleteAnalytics, saveLactate, type AthleteAnalytics } from "@/lib/api";
-import { formatDuration } from "@/lib/format";
+import { formatRaceDistance, formatResultClock, raceEstimatesFromRecords } from "@/lib/vdot";
 
 export default function AthleteAnalyticsPage() {
   const { athleteId } = useAthlete();
@@ -46,15 +46,13 @@ export default function AthleteAnalyticsPage() {
     }
   }
 
-  const pacePoints = (report?.pace_trends ?? [])
-    .filter((week) => week.pace_seconds_per_mile != null)
-    .map((week) => ({ label: week.week_start.slice(5), pace: week.pace_seconds_per_mile }));
+  const estimates = report ? raceEstimatesFromRecords(report.personal_records.races, report.personal_records.best_efforts) : null;
 
   return (
     <div className="space-y-4">
       <div>
         <h1 className="font-heading text-2xl tracking-tight sm:text-3xl">Analytics</h1>
-        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">Mileage, pace, heart rate, load, records, and lactate from the runs and races stored here.</p>
+        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">Mileage, load, records, and race estimates from the runs and races stored here.</p>
       </div>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {!report && !error ? <p className="text-sm text-muted-foreground">Loading your training…</p> : null}
@@ -63,53 +61,12 @@ export default function AthleteAnalyticsPage() {
           <Card>
             <CardHeader>
               <CardTitle>Mileage</CardTitle>
-              <CardDescription>Weekly volume, then the months that have stored distance.</CardDescription>
+              <CardDescription>Weekly volume from stored runs.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent>
               <WeeklyChart weeks={report.weekly_mileage} />
-              {report.monthly_mileage.length > 0 ? (
-                <ul className="grid gap-1 text-sm sm:grid-cols-3">
-                  {report.monthly_mileage.map((month) => (
-                    <li key={month.month}>{month.month}: {milesLabel(month.distance_miles)}</li>
-                  ))}
-                </ul>
-              ) : null}
             </CardContent>
           </Card>
-          <div className="grid gap-4 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Pace</CardTitle>
-                <CardDescription>Average pace of runs longer than a kilometer, by week.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {pacePoints.length === 0 ? <p className="text-sm text-muted-foreground">Pace shows up after a run with distance and time is stored.</p> : (
-                  <div className="h-48 min-w-0">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={pacePoints}>
-                        <CartesianGrid vertical={false} stroke="oklch(0.88 0.02 80)" />
-                        <XAxis dataKey="label" tickLine={false} axisLine={false} />
-                        <YAxis tickLine={false} axisLine={false} width={36} reversed />
-                        <Tooltip formatter={(value) => [paceLabel(Number(value)), "Pace"]} />
-                        <Bar dataKey="pace" fill="oklch(0.5 0.13 42)" radius={[6, 6, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Heart rate</CardTitle>
-                <CardDescription>Average heart rate over the last {report.heart_rate.window_days} days, split by the stored workout type.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <p>Easy runs: {bpm(report.heart_rate.easy_average_bpm)} across {report.heart_rate.easy_count}</p>
-                <p>Workouts: {bpm(report.heart_rate.workout_average_bpm)} across {report.heart_rate.workout_count}</p>
-                {report.threshold ? <p className="text-muted-foreground">Saved LT2: {paceLabel(report.threshold.pace_seconds_per_mile)} · {bpm(report.threshold.heart_rate_bpm)}</p> : null}
-              </CardContent>
-            </Card>
-          </div>
           <Card>
             <CardHeader>
               <CardTitle>Training load</CardTitle>
@@ -146,65 +103,78 @@ export default function AthleteAnalyticsPage() {
               <CardTitle>Personal records</CardTitle>
               <CardDescription>Best efforts from stored runs, and race results you entered.</CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-4 text-sm lg:grid-cols-2">
-              <ul className="space-y-1">
-                {report.personal_records.best_efforts.filter((effort) => effort.duration_seconds != null).map((effort) => (
-                  <li key={effort.label}>{effort.label}: {formatDuration(effort.duration_seconds, true)}</li>
-                ))}
-                {report.personal_records.best_efforts.every((effort) => effort.duration_seconds == null) ? <li className="text-muted-foreground">No best efforts calculated yet.</li> : null}
-              </ul>
-              <ul className="space-y-1">
-                {report.personal_records.races.map((race) => (
-                  <li key={race.id}>{race.name}: {race.result_time}</li>
-                ))}
-                {report.personal_records.races.length === 0 ? <li className="text-muted-foreground">No race results saved.</li> : null}
-              </ul>
+            <CardContent className="grid gap-6 text-sm lg:grid-cols-2">
+              <BestEfforts
+                athleteId={athleteId}
+                efforts={report.personal_records.best_efforts}
+                onSaved={() => {
+                  void load();
+                }}
+              />
+              <div>
+                <h3 className="font-medium">Race results</h3>
+                <ul className="mt-1 space-y-1">
+                  {report.personal_records.races.map((race) => (
+                    <li key={race.id}>{race.name}: {race.result_time}</li>
+                  ))}
+                  {report.personal_records.races.length === 0 ? <li className="text-muted-foreground">No race results saved.</li> : null}
+                </ul>
+              </div>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Lactate</CardTitle>
-              <CardDescription>Enter a measurement to see it beside the saved threshold.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <ul className="space-y-1 text-sm">
-                {report.lactate.map((reading) => (
-                  <li key={reading.id}>{reading.measured_on}: {reading.mmol} mmol/L{reading.pace_seconds_per_mile ? ` · ${paceLabel(reading.pace_seconds_per_mile)}` : ""}</li>
-                ))}
-                {report.lactate.length === 0 ? <li className="text-muted-foreground">No lactate readings saved.</li> : null}
-              </ul>
-              <form onSubmit={(event) => void onLactate(event)} className="grid gap-3 sm:grid-cols-2">
-                <label className="text-sm">Date<input type="date" value={lactate.measured_on} onChange={(event) => setLactate({ ...lactate, measured_on: event.target.value })} className={fieldClass} required /></label>
-                <label className="text-sm">mmol/L<input value={lactate.mmol} onChange={(event) => setLactate({ ...lactate, mmol: event.target.value })} inputMode="decimal" className={fieldClass} required /></label>
-                <label className="text-sm">Pace<input value={lactate.pace} onChange={(event) => setLactate({ ...lactate, pace: event.target.value })} placeholder="6:30" className={fieldClass} /></label>
-                <label className="text-sm">Heart rate<input value={lactate.heart_rate} onChange={(event) => setLactate({ ...lactate, heart_rate: event.target.value })} className={fieldClass} /></label>
-                <div className="sm:col-span-2"><Button type="submit">Add reading</Button></div>
-              </form>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Race estimates</CardTitle>
-              <CardDescription>{report.predictions.note}</CardDescription>
-            </CardHeader>
-            <CardContent className="text-sm">
-              {report.predictions.source ? <p className="mb-2">From {report.predictions.source.name}, {report.predictions.source.result_time}.</p> : null}
-              <ul className="space-y-1">
-                {report.predictions.estimates.map((estimate) => (
-                  <li key={estimate.label}>{estimate.label}: {estimate.time}</li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Race estimates</CardTitle>
+                <CardDescription>
+                  {estimates
+                    ? estimates.kind === "race"
+                      ? "Estimated from a saved race result — provisional until a supervised lactate test."
+                      : "Estimated from a saved best effort — provisional until a supervised lactate test."
+                    : "A saved race result or best effort is needed before a time can be estimated."}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="text-sm">
+                {estimates ? (
+                  <>
+                    <p className="mb-2">Daniels VDOT {estimates.vdot.toFixed(1)} from {formatRaceDistance(estimates.meters)} in {formatResultClock(estimates.seconds)}.</p>
+                    <ul className="space-y-1">
+                      {estimates.estimates.map((estimate) => (
+                        <li key={estimate.label}>{estimate.label}: {estimate.time}</li>
+                      ))}
+                    </ul>
+                  </>
+                ) : (
+                  <p className="text-muted-foreground">Save a personal record and the same estimate used on the coach page will show here.</p>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Lactate</CardTitle>
+                <CardDescription>Enter a measurement from a supervised test.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <ul className="space-y-1 text-sm">
+                  {report.lactate.map((reading) => (
+                    <li key={reading.id}>{reading.measured_on}: {reading.mmol} mmol/L{reading.pace_seconds_per_mile ? ` · ${paceLabel(reading.pace_seconds_per_mile)}` : ""}</li>
+                  ))}
+                  {report.lactate.length === 0 ? <li className="text-muted-foreground">No lactate readings saved.</li> : null}
+                </ul>
+                <form onSubmit={(event) => void onLactate(event)} className="grid gap-3 sm:grid-cols-2">
+                  <label className="text-sm">Date<input type="date" value={lactate.measured_on} onChange={(event) => setLactate({ ...lactate, measured_on: event.target.value })} className={fieldClass} required /></label>
+                  <label className="text-sm">mmol/L<input value={lactate.mmol} onChange={(event) => setLactate({ ...lactate, mmol: event.target.value })} inputMode="decimal" className={fieldClass} required /></label>
+                  <label className="text-sm">Pace<input value={lactate.pace} onChange={(event) => setLactate({ ...lactate, pace: event.target.value })} placeholder="6:30" className={fieldClass} /></label>
+                  <label className="text-sm">Heart rate<input value={lactate.heart_rate} onChange={(event) => setLactate({ ...lactate, heart_rate: event.target.value })} className={fieldClass} /></label>
+                  <div className="sm:col-span-2"><Button type="submit">Add reading</Button></div>
+                </form>
+              </CardContent>
+            </Card>
+          </div>
         </>
       ) : null}
     </div>
   );
-}
-
-function bpm(value: number | null): string {
-  if (value == null) return "—";
-  return `${Math.round(value)} bpm`;
 }
 
 function paceToSeconds(value: string): number | null {

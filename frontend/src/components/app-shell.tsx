@@ -15,9 +15,8 @@ const coachLinks = [
 const athleteLinks = [
   { href: "/athlete", label: "Home" },
   { href: "/athlete/calendar", label: "Calendar" },
-  { href: "/athlete/week", label: "Plan" },
   { href: "/athlete/analytics", label: "Analytics" },
-  { href: "/athlete/messages", label: "Coach Owen" },
+  { href: "/athlete/messages", label: "Messages" },
   { href: "/athlete/settings", label: "Settings" },
 ];
 
@@ -51,7 +50,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Link href={coachSide ? "/" : "/athlete"} className="inline-flex shrink-0">
             <img src="/after-hours-athletics.png" alt="after : hours athletics" className="h-9 w-auto sm:h-11" />
           </Link>
-          <nav className="flex flex-wrap items-center gap-x-1 gap-y-1">
+          <nav className="flex flex-wrap items-center gap-x-0.5 gap-y-1 sm:gap-x-1">
             {links.map((link) => {
               const active = isActive(pathname, link.href);
               return (
@@ -59,7 +58,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   key={link.href}
                   href={link.href}
                   className={cn(
-                    "inline-flex min-h-11 items-center px-1.5 text-[11px] tracking-[0.06em] uppercase sm:px-2.5 sm:tracking-[0.14em]",
+                    "inline-flex min-h-11 items-center px-1.5 text-[11px] tracking-[0.02em] uppercase sm:px-2.5 sm:tracking-[0.14em]",
                     active ? "text-foreground underline decoration-1 underline-offset-8" : "text-foreground/70 hover:text-foreground",
                   )}
                 >

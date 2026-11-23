@@ -517,14 +517,16 @@ def dashboard(
     selected = day or today
     brief = brief_for_day(db, coach, selected)
     week_start = selected - timedelta(days=(selected.weekday() + 1) % 7)
-    week_end = week_start + timedelta(days=7)
+    monday = selected - timedelta(days=selected.weekday())
+    range_start = min(week_start, monday)
+    range_end = max(week_start + timedelta(days=7), monday + timedelta(days=7))
     recent = list(
         db.scalars(
             select(Activity)
             .where(
                 Activity.athlete_id.in_([row.id for row in rows] or [0]),
-                Activity.start_time_local >= week_start.isoformat(),
-                Activity.start_time_local < week_end.isoformat(),
+                Activity.start_time_local >= range_start.isoformat(),
+                Activity.start_time_local < range_end.isoformat(),
             )
             .order_by(Activity.start_time_local.desc())
         ).all()
@@ -538,8 +540,8 @@ def dashboard(
             select(ScheduledWorkout)
             .where(
                 ScheduledWorkout.athlete_id.in_(roster_ids),
-                ScheduledWorkout.scheduled_date >= week_start,
-                ScheduledWorkout.scheduled_date < week_end,
+                ScheduledWorkout.scheduled_date >= range_start,
+                ScheduledWorkout.scheduled_date < range_end,
             )
             .order_by(ScheduledWorkout.scheduled_date, ScheduledWorkout.id)
         ).all()

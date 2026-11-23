@@ -889,6 +889,13 @@ export function getAthleteWeek(athleteId: number) {
   return request<PlanView & { today: string }>(`/api/portal/${athleteId}/week`);
 }
 
+export function rescheduleAthletePlan(athleteId: number, moves: Array<{ id: number; scheduled_date: string }>) {
+  return request<{ updated: number }>(`/api/portal/${athleteId}/plan/reschedule`, {
+    method: "POST",
+    body: JSON.stringify({ moves }),
+  });
+}
+
 export function getAthleteWorkout(athleteId: number, planId: number) {
   return request<PlannedWorkout>(`/api/portal/${athleteId}/workouts/${planId}`);
 }

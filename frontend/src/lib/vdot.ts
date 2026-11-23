@@ -104,6 +104,37 @@ export function formatRaceDistance(meters: number) {
   return `${Math.round(meters).toLocaleString("en-US")} m`;
 }
 
+const RACE_ESTIMATES: Array<[string, number]> = [
+  ["5K", 5000],
+  ["10K", 10000],
+  ["Half marathon", 21097.5],
+  ["Marathon", 42195],
+];
+
+function predictedRaceSeconds(vdot: number, meters: number) {
+  let low = 30;
+  let high = 8 * 60 * 60;
+  for (let index = 0; index < 48; index += 1) {
+    const mid = (low + high) / 2;
+    const score = vdotScore(meters, mid);
+    if (score == null || score < vdot) high = mid;
+    else low = mid;
+  }
+  return (low + high) / 2;
+}
+
+export function raceEstimatesFromRecords(races: RaceEntry[], efforts: RunningStats["best_efforts"]) {
+  const source = paceEstimateFromRecords(races, efforts);
+  if (source == null) return null;
+  return {
+    ...source,
+    estimates: RACE_ESTIMATES.map(([label, meters]) => ({
+      label,
+      time: formatResultClock(predictedRaceSeconds(source.vdot, meters)),
+    })),
+  };
+}
+
 export function paceEstimateFromRecords(races: RaceEntry[], efforts: RunningStats["best_efforts"]): PaceEstimate | null {
   const candidates: Array<{ vdot: number; meters: number; seconds: number; kind: "race" | "effort" }> = [];
   for (const race of races) {

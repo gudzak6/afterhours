@@ -127,6 +127,31 @@ function EffortTime({
   );
 }
 
+export function BestEfforts({
+  athleteId,
+  efforts,
+  onSaved,
+}: {
+  athleteId: number;
+  efforts: RunningStats["best_efforts"];
+  onSaved: (stats: RunningStats) => void;
+}) {
+  return (
+    <div>
+      <h3 className="font-medium">Best efforts</h3>
+      <p className="mt-1 text-muted-foreground">Fastest stretch found in the stored runs. Edit a time to replace it. Clear the time to use the calculated one again.</p>
+      <div className="mt-1 divide-y divide-border">
+        {efforts.map((effort) => (
+          <div key={effort.label} className="flex items-center justify-between gap-4 py-2">
+            <span>{effort.label}</span>
+            <EffortTime athleteId={athleteId} effort={effort} onSaved={onSaved} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function AthleteStats({
   athleteId,
   stats,
@@ -148,18 +173,7 @@ export function AthleteStats({
           <Row label="Elev gain / week" value={recent.elevation_feet == null ? "—" : `${Math.round(recent.elevation_feet)} ft`} />
         </div>
       </div>
-      <div>
-        <h3 className="font-medium">Best efforts</h3>
-        <p className="mt-1 text-muted-foreground">Fastest stretch found in the stored runs. Edit a time to replace it. Clear the time to use the calculated one again.</p>
-        <div className="mt-1 divide-y divide-border">
-          {stats.best_efforts.map((effort) => (
-            <div key={effort.label} className="flex items-center justify-between gap-4 py-2">
-              <span>{effort.label}</span>
-              <EffortTime athleteId={athleteId} effort={effort} onSaved={onChange} />
-            </div>
-          ))}
-        </div>
-      </div>
+      <BestEfforts athleteId={athleteId} efforts={stats.best_efforts} onSaved={onChange} />
     </div>
   );
 }
