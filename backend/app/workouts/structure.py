@@ -388,18 +388,73 @@ def _miles_from_samples(samples: list[dict]) -> dict:
     }
 
 
+def _sprint_from_laps(laps: list[dict]) -> dict:
+    """Short fast laps separated by a slower lap. Pace stays the watch lap."""
+    fast: list[int] = []
+    for index, lap in enumerate(laps):
+        duration = float(lap.get("duration_seconds") or 0)
+        distance = float(lap.get("distance_meters") or 0)
+        speed = lap.get("average_speed_mps")
+        if not isinstance(speed, (int, float)):
+            continue
+        if 6 <= duration <= 40 and 30 <= distance <= 220 and float(speed) >= 3.2:
+            fast.append(index)
+    if len(fast) < 3 or fast[-1] - fast[0] + 1 == len(fast):
+        return _empty()
+    blocks: list[dict] = []
+    for position, index in enumerate(fast):
+        lap = laps[index]
+        speed = float(lap["average_speed_mps"])
+        recovery_seconds = None
+        recovery_meters = None
+        if position + 1 < len(fast):
+            between = laps[index + 1 : fast[position + 1]]
+            recovery_seconds = sum(float(item.get("duration_seconds") or 0) for item in between)
+            recovery_meters = sum(float(item.get("distance_meters") or 0) for item in between)
+            weighted = 0.0
+            weight = 0.0
+            for item in between:
+                item_speed = item.get("average_speed_mps")
+                item_duration = float(item.get("duration_seconds") or 0)
+                if isinstance(item_speed, (int, float)) and item_duration > 0:
+                    weighted += float(item_speed) * item_duration
+                    weight += item_duration
+            if weight > 0 and weighted / weight > speed * 0.7:
+                return _empty()
+        blocks.append(
+            {
+                "distance_meters": float(lap.get("distance_meters") or 0),
+                "duration_seconds": float(lap.get("duration_seconds") or 0),
+                "average_heart_rate_bpm": lap.get("average_heart_rate_bpm"),
+                "recovery_seconds": recovery_seconds,
+                "recovery_meters": recovery_meters,
+            }
+        )
+    warmup = sum(float(lap.get("distance_meters") or 0) for lap in laps[: fast[0]])
+    cooldown = sum(float(lap.get("distance_meters") or 0) for lap in laps[fast[-1] + 1 :])
+    result = _assemble(blocks, warmup, cooldown)
+    result["kind"] = "sprints"
+    for repetition in result["repetitions"]:
+        repetition["measurement_source"] = "garmin_lap"
+    return result
+
+
+def _is_mile_lap(lap: dict) -> bool:
+    distance = lap.get("distance_meters")
+    duration = lap.get("duration_seconds")
+    return (
+        isinstance(distance, (int, float))
+        and abs(float(distance) - METERS_PER_MILE) <= 40
+        and isinstance(duration, (int, float))
+    )
+
+
 def _miles_from_laps(laps: list[dict]) -> dict:
-    miles = [
-        lap
-        for lap in laps
-        if isinstance(lap.get("distance_meters"), (int, float))
-        and abs(float(lap["distance_meters"]) - METERS_PER_MILE) <= 40
-        and isinstance(lap.get("duration_seconds"), (int, float))
-    ]
-    if len(miles) < 2:
+    indexed = [(index, lap) for index, lap in enumerate(laps) if _is_mile_lap(lap)]
+    if len(indexed) < 2:
         return _empty()
     repetitions = []
-    for number, lap in enumerate(miles, start=1):
+    for number, (_index, lap) in enumerate(indexed, start=1):
         heart = lap.get("average_heart_rate_bpm")
         repetitions.append(
             _mile_repetition(
@@ -410,8 +465,29 @@ def _miles_from_laps(laps: list[dict]) -> dict:
                 [] if not isinstance(heart, (int, float)) else [float(heart)],
             )
         )
+    trailing = laps[indexed[-1][0] + 1 :]
+    trail_distance = sum(float(lap.get("distance_meters") or 0) for lap in trailing)
+    trail_duration = sum(float(lap.get("duration_seconds") or 0) for lap in trailing)
+    if trail_distance >= 100 and trail_duration > 0:
+        hearts = [
+            float(lap["average_heart_rate_bpm"])
+            for lap in trailing
+            if isinstance(lap.get("average_heart_rate_bpm"), (int, float))
+        ]
+        repetitions.append(
+            _mile_repetition(
+                len(repetitions) + 1,
+                f"{trail_distance / METERS_PER_MILE:.2f} mi",
+                trail_distance,
+                trail_duration,
+                hearts,
+            )
+        )
+    headline = f"{len(indexed)} × 1 mile"
+    if trail_distance >= 100:
+        headline = f"{headline}, then {trail_distance / METERS_PER_MILE:.2f} mi"
     return {
-        "label": f"{len(miles)} × 1 mile",
+        "label": headline,
         "kind": "miles",
         "warmup_meters": None,
         "cooldown_meters": None,
@@ -433,6 +509,24 @@ def _interval_breakdown(laps: list[dict], samples: list[dict]) -> dict:
     return _assemble(blocks, warmup, cooldown)
 
 
+def _with_lap_source(result: dict, samples: list[dict]) -> dict:
+    """Keep the watch lap pace. Record a GPS-trace pace beside it when they disagree."""
+    for repetition in result.get("repetitions") or []:
+        repetition["measurement_source"] = "garmin_lap"
+    if len(samples) < 30:
+        return result
+    traced = _miles_from_samples(samples)
+    traced_by_index = {repetition["index"]: repetition for repetition in traced.get("repetitions") or []}
+    for repetition in result.get("repetitions") or []:
+        other = traced_by_index.get(repetition["index"])
+        lap_pace = repetition.get("pace_seconds_per_mile")
+        trace_pace = None if other is None else other.get("pace_seconds_per_mile")
+        if lap_pace is None or trace_pace is None or abs(trace_pace - lap_pace) < 15:
+            continue
+        repetition["sample_pace_seconds_per_mile"] = trace_pace
+    return result
+
+
 def describe_workout(laps: list[dict], samples: list[dict] | None = None) -> dict:
     usable = [
         sample
@@ -444,8 +538,16 @@ def describe_workout(laps: list[dict], samples: list[dict] | None = None) -> dic
     intervals = _interval_breakdown(laps, usable)
     if intervals["label"]:
         return intervals
+    sprints = _sprint_from_laps(laps)
+    if sprints["label"]:
+        return sprints
+    lap_miles = _miles_from_laps(laps)
+    if lap_miles["label"]:
+        return _with_lap_source(lap_miles, usable)
     if len(usable) >= 30:
         miles = _miles_from_samples(usable)
         if miles["label"]:
+            for repetition in miles["repetitions"]:
+                repetition["measurement_source"] = "gps_trace"
             return miles
-    return _miles_from_laps(laps)
+    return lap_miles

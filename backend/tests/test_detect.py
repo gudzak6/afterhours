@@ -79,7 +79,11 @@ def test_east_brunswick_hill_sprints_are_in_the_fit_not_the_summary() -> None:
     assert result["plan_context"]["title"] == "Easy run"
     assert "not evidence" in result["plan_note"].lower() or "not evidence" in result["plan_note"]
     assert "structured_workout_steps" in result["data_quality"]["missing_fields"]
-    assert describe_workout(fixture["laps"], fixture["samples"])["label"] is None
+    breakdown = describe_workout(fixture["laps"], fixture["samples"])
+    assert breakdown["kind"] == "sprints"
+    assert len(breakdown["repetitions"]) == 5
+    assert breakdown["repetitions"][0]["measurement_source"] == "garmin_lap"
+    assert breakdown["repetitions"][0]["duration_seconds"] == 14.1
     assert classify_laps(fixture["laps"], sport="running")["workout_type"] == "strides"
 
 

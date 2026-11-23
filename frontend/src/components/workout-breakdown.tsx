@@ -11,6 +11,8 @@ type Repetition = {
   average_heart_rate_bpm: number | null;
   recovery_seconds: number | null;
   recovery: string | null;
+  measurement_source?: string | null;
+  sample_pace_seconds_per_mile?: number | null;
 };
 
 type BreakdownGroup = {
@@ -62,7 +64,9 @@ export function WorkoutBreakdown({ metrics }: { metrics: Record<string, unknown>
     );
   }
   const mileSplits = breakdown.kind === "miles";
+  const sprintEfforts = breakdown.kind === "sprints";
   const showJog = breakdown.repetitions.some((rep) => rep.recovery_seconds != null && rep.recovery_seconds >= 15);
+  const disagreed = breakdown.repetitions.filter((rep) => rep.sample_pace_seconds_per_mile != null);
   const before = miles(breakdown.warmup_meters);
   const after = miles(breakdown.cooldown_meters);
   const context = [
@@ -76,13 +80,20 @@ export function WorkoutBreakdown({ metrics }: { metrics: Record<string, unknown>
         <CardTitle>{mileSplits ? "Miles" : "Workout reps"}</CardTitle>
         <CardDescription>
           {mileSplits
-            ? "Each row is one mile of the run. The watch split these automatically."
-            : "Each pace is the fast portion of that rep. A mile auto-lap does not split a rep that stays fast."}
+            ? "Each row is one watch mile. The pace is the lap time, not a recalculation from the GPS trace."
+            : sprintEfforts
+              ? "Each pace is the watch lap for that short effort."
+              : "Each pace is the fast portion of that rep. A mile auto-lap does not split a rep that stays fast."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         {mileSplits ? null : <p className="font-heading text-2xl tracking-tight">{breakdown.label}</p>}
         {context.length > 0 ? <p className="text-sm text-muted-foreground">{context.join(" · ")}</p> : null}
+        {disagreed.length > 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {disagreed.map((rep) => rep.label).join(", ")} kept the watch lap. The GPS trace is slower because it includes a stop.
+          </p>
+        ) : null}
         <div className="space-y-5">
           {breakdown.groups.map((group, groupIndex) => (
             <div key={`${group.heading ?? "reps"}-${groupIndex}`} className="space-y-2">
