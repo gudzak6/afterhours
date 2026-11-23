@@ -2,31 +2,85 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { Check, ChevronRight } from "lucide-react";
 import { AthleteName } from "@/components/athlete-name";
-import { Button } from "@/components/ui/button";
-import { deleteAthlete, errorMessage, getDashboard, type CoachDashboard } from "@/lib/api";
+import { errorMessage, getActivities, getDashboard, type Activity, type CoachDashboard, type RosterAthlete } from "@/lib/api";
 
-function GarminSignal({ status }: { status: string }) {
+const METERS_PER_MILE = 1609.344;
+
+function addDays(iso: string, days: number) {
+  const [year, month, day] = iso.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function mondayOf(iso: string) {
+  const [year, month, day] = iso.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  const sinceMonday = date.getUTCDay() === 0 ? 6 : date.getUTCDay() - 1;
+  date.setUTCDate(date.getUTCDate() - sinceMonday);
+  return date.toISOString().slice(0, 10);
+}
+
+function weekMileage(today: string, athlete: RosterAthlete, activities: Activity[], dashboard: CoachDashboard) {
+  const start = mondayOf(today);
+  const days = Array.from({ length: 7 }, (_, index) => addDays(start, index));
+  const miles = days.map(() => 0);
+  const source = activities.length > 0 ? activities : dashboard.recent_activities;
+  for (const activity of source) {
+    if (activity.athlete_id !== athlete.id || !activity.start_time_local) continue;
+    const index = days.indexOf(activity.start_time_local.slice(0, 10));
+    if (index < 0) continue;
+    const distance = activity.distance_miles ?? (activity.distance_meters == null ? null : activity.distance_meters / METERS_PER_MILE);
+    if (distance != null) miles[index] += distance;
+  }
+  const total = miles.reduce((sum, value) => sum + value, 0);
+  return { days, miles, total: total > 0 ? total : athlete.weekly_miles };
+}
+
+function WeekBars({ miles, today, days }: { miles: number[]; today: string; days: string[] }) {
+  const peak = Math.max(...miles, 0);
+  return (
+    <div className="flex h-10 items-end gap-1" aria-hidden>
+      {miles.map((value, index) => {
+        const current = days[index] === today;
+        const empty = value <= 0;
+        const height = empty ? 28 : Math.max(42, (value / peak) * 100);
+        const color = empty ? "bg-[#d5d5d5]" : current ? "bg-primary" : "bg-[#6ec4de]";
+        return <span key={days[index]} className={`w-2 rounded-[2px] ${color}`} style={{ height: `${height}%` }} />;
+      })}
+    </div>
+  );
+}
+
+function GarminStatus({ status }: { status: string }) {
   const connected = status === "connected";
   const pending = status === "pending";
-  const label = connected ? "Connected" : pending ? "Signing in" : "Not connected";
-  const dot = connected ? "bg-emerald-500" : pending ? "bg-amber-500" : "bg-foreground/25";
+  const label = connected ? "Garmin connected" : pending ? "Garmin signing in" : "Garmin not connected";
   return (
-    <span className="inline-flex items-center gap-2" title="Garmin Connect">
-      <span className={`size-2 shrink-0 rounded-full ${dot}`} aria-hidden />
-      <span>{label}</span>
-    </span>
+    <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+      <span
+        className={`inline-flex size-4 shrink-0 items-center justify-center rounded-full ${connected ? "bg-emerald-500 text-white" : pending ? "bg-amber-400" : "bg-foreground/20"}`}
+        aria-hidden
+      >
+        {connected ? <Check className="size-2.5" strokeWidth={3} /> : null}
+      </span>
+      {label}
+    </p>
   );
 }
 
 export default function AthletesPage() {
   const [dashboard, setDashboard] = useState<CoachDashboard | null>(null);
+  const [activities, setActivities] = useState<Activity[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [removingId, setRemovingId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setDashboard(await getDashboard());
+      const [roster, runs] = await Promise.all([getDashboard(), getActivities(200).catch(() => null)]);
+      setDashboard(roster);
+      setActivities(runs?.activities ?? []);
       setError(null);
     } catch (loadError) {
       setError(errorMessage(loadError));
@@ -40,103 +94,56 @@ export default function AthletesPage() {
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  const coachName = dashboard?.coach.display_name || "Coach Owen";
-
-  async function onRemove(athleteId: number, name: string) {
-    const confirmed = window.confirm(`Remove ${name}? Their activities, training plan, and reports are deleted with them.`);
-    if (!confirmed) return;
-    setRemovingId(athleteId);
-    setError(null);
-    try {
-      await deleteAthlete(athleteId);
-      if (window.sessionStorage.getItem("trainingcoach-athlete") === String(athleteId)) {
-        window.sessionStorage.removeItem("trainingcoach-athlete");
-      }
-      await load();
-    } catch (removeError) {
-      setError(errorMessage(removeError));
-    } finally {
-      setRemovingId(null);
-    }
-  }
+  const athletes = dashboard?.athletes ?? [];
+  const countLabel = `${athletes.length} athlete${athletes.length === 1 ? "" : "s"}`;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="font-heading text-2xl tracking-tight sm:text-3xl">Athletes</h1>
-        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          Everyone on the roster. Open an athlete to see their training.
-        </p>
-      </div>
+    <div className="space-y-4">
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {!dashboard && !error ? <p className="text-sm text-muted-foreground">Loading the roster…</p> : null}
       {dashboard ? (
-        dashboard.athletes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No athletes on the roster.
-          </p>
-        ) : (
-          <>
-          <ul className="divide-y divide-border rounded-xl border border-border md:hidden">
-            {dashboard.athletes.map((athlete) => (
-              <li key={athlete.id} className="space-y-3 px-4 py-4">
-                <Link href={`/athletes/${athlete.id}`} className="text-base font-medium hover:underline">
-                  <AthleteName name={athlete.display_name} />
-                </Link>
-                <p className="text-sm text-muted-foreground">{coachName}</p>
-                <GarminSignal status={athlete.garmin_status} />
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="destructive"
-                  disabled={removingId !== null}
-                  onClick={() => void onRemove(athlete.id, athlete.display_name)}
-                >
-                  {removingId === athlete.id ? "Removing…" : "Remove"}
-                </Button>
-              </li>
-            ))}
-          </ul>
-          <div className="hidden overflow-x-auto rounded-xl border border-border md:block">
-            <table className="w-full text-left text-sm">
-              <thead className="text-xs tracking-wide text-muted-foreground uppercase">
-                <tr className="border-b border-border">
-                  <th className="px-4 py-3 font-medium">Athlete</th>
-                  <th className="px-4 py-3 font-medium">Garmin</th>
-                  <th className="px-4 py-3 font-medium">Coach</th>
-                  <th className="px-4 py-3 text-right font-medium">Remove</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dashboard.athletes.map((athlete) => (
-                  <tr key={athlete.id} className="border-b border-border/70 last:border-0">
-                    <td className="px-4 py-3">
-                      <Link href={`/athletes/${athlete.id}`} className="font-medium hover:underline">
-                        <AthleteName name={athlete.display_name} />
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3">
-                      <GarminSignal status={athlete.garmin_status} />
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">{coachName}</td>
-                    <td className="px-4 py-3 text-right">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="destructive"
-                        disabled={removingId !== null}
-                        onClick={() => void onRemove(athlete.id, athlete.display_name)}
-                      >
-                        {removingId === athlete.id ? "Removing…" : "Remove"}
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          </>
-        )
+        <section className="overflow-hidden rounded-xl border border-foreground/10 bg-white shadow-sm">
+          <header className="flex items-center justify-between gap-4 border-b border-foreground/10 px-5 py-4">
+            <h1 className="text-lg font-semibold tracking-tight">Athletes</h1>
+            <p className="text-sm text-muted-foreground">{countLabel}</p>
+          </header>
+          {athletes.length === 0 ? (
+            <p className="px-5 py-6 text-sm text-muted-foreground">No athletes on the roster.</p>
+          ) : (
+            <ul>
+              {athletes.map((athlete) => {
+                const week = weekMileage(dashboard.today, athlete, activities, dashboard);
+                const shown = week.total == null ? "0.0 mi" : `${week.total.toFixed(1)} mi`;
+                return (
+                  <li key={athlete.id} className="border-b border-foreground/10 last:border-0">
+                    <Link
+                      href={`/athletes/${athlete.id}`}
+                      className="flex flex-col gap-4 px-5 py-4 transition-colors hover:bg-foreground/[0.03] sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <span>
+                        <span className="block text-base font-semibold tracking-tight">
+                          <AthleteName name={athlete.display_name} />
+                        </span>
+                        <GarminStatus status={athlete.garmin_status} />
+                        <span className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
+                          Click to see activities and other data
+                          <ChevronRight className="size-3.5" aria-hidden />
+                        </span>
+                      </span>
+                      <span className="flex items-center gap-4 sm:shrink-0">
+                        <span className="min-w-16 text-center">
+                          <span className="block text-xl font-semibold tracking-tight">{shown}</span>
+                          <span className="block text-xs text-muted-foreground">This week</span>
+                        </span>
+                        <WeekBars miles={week.miles} today={dashboard.today} days={week.days} />
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
       ) : null}
     </div>
   );
