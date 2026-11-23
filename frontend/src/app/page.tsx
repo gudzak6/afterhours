@@ -276,7 +276,8 @@ function AthletePanel({
                   href={activityPath(activity.garmin_activity_id, group.athleteId)}
                   className="block rounded-lg border border-border bg-background px-2.5 py-2 text-sm hover:bg-muted"
                 >
-                  {completedLine(activity)}
+                  <span className="block">{completedLine(activity)}</span>
+                  <span className="mt-1 block text-xs text-muted-foreground underline">See details</span>
                 </Link>
               ))}
             </div>
