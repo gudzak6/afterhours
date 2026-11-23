@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.database import get_db
-from app.coach.engine import chat, openai_configured, present_report, report_progress, safe_error, start_report
+from app.coach.engine import chat, gemini_ready, present_report, report_progress, safe_error, start_report
 from app.fit.importer import file_import_status, import_one, start_file_import
 from app.garmin.mapping import METERS_PER_MILE, pace_seconds_per_mile
 from app.metrics.engine import activity_metrics
@@ -141,7 +141,7 @@ def _athlete_out(db: Session, athlete: Athlete, settings: Settings) -> AthleteOu
             )
             for row in thresholds
         ],
-        openai_configured=openai_configured(settings),
+        gemini_configured=gemini_ready(settings),
     )
 
 
@@ -708,16 +708,16 @@ def create_report(
 ) -> dict:
     athlete = ensure_athlete(db, settings)
     activity = _load_activity(db, athlete, activity_id, athlete_id)
-    if not openai_configured(settings):
+    if not gemini_ready(settings):
         raise HTTPException(
             status_code=503,
             detail={
-                "code": "openai_not_configured",
-                "message": "Add OPENAI_API_KEY to the API environment to generate a report. No report was invented.",
+                "code": "gemini_not_configured",
+                "message": "Add GEMINI_API_KEY to the API environment to generate a report. No report was invented.",
             },
         )
     status = start_report(activity.id)
-    return {"status": status, "model": settings.openai_model, "report": None}
+    return {"status": status, "model": settings.gemini_model, "report": None}
 
 
 @router.post("/api/coach/chat", response_model=ChatResponse)
@@ -728,12 +728,12 @@ def coach_chat(
 ) -> ChatResponse:
     athlete = ensure_athlete(db, settings)
     roster = athletes_for_coach(db, ensure_coach(db, settings)) or [athlete]
-    if not openai_configured(settings):
+    if not gemini_ready(settings):
         raise HTTPException(
             status_code=503,
             detail={
-                "code": "openai_not_configured",
-                "message": "Add OPENAI_API_KEY to the API environment. The coach will not invent an answer.",
+                "code": "gemini_not_configured",
+                "message": "Add GEMINI_API_KEY to the API environment. The coach will not invent an answer.",
             },
         )
     try:
@@ -750,7 +750,7 @@ def coach_chat(
     except Exception as exc:
         raise HTTPException(
             status_code=502,
-            detail={"code": "openai_error", "message": safe_error(exc)},
+            detail={"code": "gemini_error", "message": safe_error(exc)},
         ) from exc
     return ChatResponse(
         conversation_id=conversation.id,

@@ -29,8 +29,8 @@ class Settings(BaseSettings):
     garmin_timeout_seconds: float = 30.0
     garmin_token_cache_path: Path = Field(default=DATA_DIR / "garmin-bearer-token.json")
 
-    openai_api_key: str = ""
-    openai_model: str = "gpt-6.1-sol"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.6-flash"
     public_app_url: str = "http://127.0.0.1:3010"
     smtp_host: str = ""
     smtp_port: int = 587

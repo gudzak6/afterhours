@@ -154,13 +154,13 @@ def _stored_plan(item: dict) -> dict | None:
 
 
 def _from_model(settings: Settings, text: str, *, today: date, start: date) -> tuple[list[dict], list[str]]:
-    from app.coach.engine import _client, _completion, openai_configured
+    from app.coach.gemini import complete_messages, gemini_configured
 
-    if not openai_configured(settings):
-        raise RuntimeError("openai_not_configured")
-    completion = _completion(
-        _client(settings),
-        model=settings.openai_model,
+    if not gemini_configured(settings):
+        raise RuntimeError("gemini_not_configured")
+    raw_text = complete_messages(
+        settings,
+        model=settings.gemini_model,
         messages=[
             {"role": "system", "content": PROGRAM_PROMPT},
             {
@@ -174,7 +174,7 @@ def _from_model(settings: Settings, text: str, *, today: date, start: date) -> t
         },
     )
     try:
-        payload = json.loads(completion.choices[0].message.content or "{}")
+        payload = json.loads(raw_text or "{}")
     except json.JSONDecodeError as exc:
         raise RuntimeError("The program could not be read.") from exc
     plans = []
@@ -199,21 +199,21 @@ def workouts_from_request(
     race_goal: str | None = None,
     target_time: str | None = None,
 ) -> tuple[list[dict], list[str], str]:
-    from app.coach.engine import _client, _completion, openai_configured
+    from app.coach.gemini import complete_messages, gemini_configured
 
     ask = request.strip()
     if len(ask) < 8:
         raise ValueError("Describe the plan you want.")
-    if not openai_configured(settings):
-        raise RuntimeError("openai_not_configured")
+    if not gemini_configured(settings):
+        raise RuntimeError("gemini_not_configured")
     facts = [f"Athlete: {athlete_name or 'Athlete'}"]
     if race_goal:
         facts.append(f"Saved race goal: {race_goal}")
     if target_time:
         facts.append(f"Saved target time: {target_time}")
-    completion = _completion(
-        _client(settings),
-        model=settings.openai_model,
+    raw_text = complete_messages(
+        settings,
+        model=settings.gemini_model,
         messages=[
             {"role": "system", "content": PLAN_REQUEST_PROMPT},
             {
@@ -231,7 +231,7 @@ def workouts_from_request(
         },
     )
     try:
-        payload = json.loads(completion.choices[0].message.content or "{}")
+        payload = json.loads(raw_text or "{}")
     except json.JSONDecodeError as exc:
         raise RuntimeError("The plan could not be written.") from exc
     plans = []

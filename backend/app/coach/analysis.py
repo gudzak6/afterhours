@@ -334,7 +334,7 @@ def run_coaching_analysis(settings, context: dict, complete) -> tuple[dict, dict
     kind, _confidence = detected_type(context)
     rule = workout_rule(kind if _confidence >= 0.6 else "unknown")
     analyst_payload = complete(
-        model=settings.openai_model,
+        model=settings.gemini_model,
         reasoning_effort=REASONING_EFFORT,
         system=ANALYST_PROMPT.format(rule=rule),
         user="Analyze this recording:\n" + json.dumps(_analyst_packet(context), default=str),
@@ -354,7 +354,7 @@ def run_coaching_analysis(settings, context: dict, complete) -> tuple[dict, dict
         violations = guard_report(report, context)
     trace = {
         "prompt_version": ANALYSIS_PROMPT_VERSION,
-        "model": settings.openai_model,
+        "model": settings.gemini_model,
         "reasoning_effort": REASONING_EFFORT,
         "workout_rule": kind,
         "analyst": analyst,
@@ -373,7 +373,7 @@ def _coach_call(settings, context: dict, analyst: dict, complete, violations: li
         else "Quality session. The three paragraphs together should be 100 to 140 words.\n"
     )
     return complete(
-        model=settings.openai_model,
+        model=settings.gemini_model,
         reasoning_effort=REASONING_EFFORT,
         system=COACH_PROMPT,
         user=depth + note + "Write the report from this packet only:\n" + json.dumps(_coach_packet(context, analyst), default=str),

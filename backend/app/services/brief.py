@@ -240,10 +240,10 @@ def generate_brief(
     plans_by_athlete: dict[int, list[dict]] | None = None,
     surrounding_by_athlete: dict[int, list[dict]] | None = None,
 ) -> CoachingBrief:
-    from app.coach.engine import _client, _completion, openai_configured
+    from app.coach.gemini import complete_messages, gemini_configured
 
-    if not openai_configured(settings):
-        raise RuntimeError("openai_not_configured")
+    if not gemini_configured(settings):
+        raise RuntimeError("gemini_not_configured")
     allowed = {int(item["athlete_id"]) for item in roster}
     zone = ZoneInfo(coach.timezone or "America/New_York")
     today = datetime.now(zone).date()
@@ -258,16 +258,15 @@ def generate_brief(
     report = None
     error = "The model returned no brief."
     for _attempt in range(2):
-        completion = _completion(
-            _client(settings),
-            model=settings.openai_model,
+        text = complete_messages(
+            settings,
+            model=settings.gemini_model,
             response_format={
                 "type": "json_schema",
                 "json_schema": {"name": "coaching_brief", "strict": True, "schema": BRIEF_SCHEMA},
             },
             messages=messages,
         )
-        text = completion.choices[0].message.content or ""
         try:
             report = validate_brief(json.loads(text), allowed)
             break
@@ -281,7 +280,7 @@ def generate_brief(
         coach_id=coach_id,
         brief_date=local_day,
         status="ready",
-        model=settings.openai_model,
+        model=settings.gemini_model,
         report=report,
         created_at=datetime.now(UTC),
     )

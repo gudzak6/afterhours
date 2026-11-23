@@ -1,10 +1,10 @@
 # Training Coach
 
-Local running coach that imports Garmin activities through the official Personal API, parses FIT files, classifies workouts from lap pace, and writes coaching reports when an OpenAI key is configured.
+Local running coach that imports Garmin activities through the official Personal API, parses FIT files, classifies workouts from lap pace, and writes coaching reports when a Gemini key is configured.
 
 ## Architecture
 
-The browser talks only to the Next.js app. Next.js proxies `/backend/*` to the FastAPI process. Garmin and OpenAI credentials stay in the API process.
+The browser talks only to the Next.js app. Next.js proxies `/backend/*` to the FastAPI process. Garmin and Gemini credentials stay in the API process.
 
 ```text
 frontend (Next.js) -- /backend/* --> backend (FastAPI) --> Garmin Personal API
@@ -42,9 +42,9 @@ Automatic sync uses a background interval (`GARMIN_SYNC_INTERVAL_MINUTES`, defau
 | `GET` | `/api/garmin/files` | File import counts |
 | `POST` | `/api/activities/{activity_id}/file` | Download one original file |
 | `PATCH` | `/api/activities/{activity_id}/classification` | Save a workout-type correction |
-| `POST` | `/api/activities/{activity_id}/report` | Store an AI report, or refuse when no OpenAI key is set |
+| `POST` | `/api/activities/{activity_id}/report` | Store an AI report, or refuse when no Gemini key is set |
 | `POST` | `/api/coach/chat` | Activity-aware chat that reads stored metrics with tools |
-| `GET` | `/api/athlete` | Single local athlete, zones, thresholds, and whether OpenAI is configured |
+| `GET` | `/api/athlete` | Single local athlete, zones, thresholds, and whether Gemini is configured |
 | `PATCH` | `/api/athlete` | Update profile, zones, goal, and saved thresholds |
 
 `POST /api/garmin/sync` accepts an optional JSON body:
@@ -96,6 +96,6 @@ Workout labels come from lap duration, distance, and pace. The FIT intensity fie
 
 Heart-rate drift is calculated only for a steady section of at least 20 minutes whose halves stay within 5 percent pace. Repetitions shorter than 30 seconds are marked so heart rate is not treated as the effort. Lactate threshold is used only when an LT2 pace is saved in Settings.
 
-`OPENAI_MODEL` defaults to `gpt-6.1-sol`. Reports and chat require `OPENAI_API_KEY`. Without it, those endpoints return `openai_not_configured` and do not invent a report.
+`GEMINI_MODEL` defaults to `gemini-3.6-flash`. Reports, briefs, plans, and chat require `GEMINI_API_KEY` on the API process. Without it, those endpoints return `gemini_not_configured` and do not invent a report. Netlify does not receive the key.
 
 Nothing in the app changes a training plan. Recommendations stay in the report or the chat.

@@ -267,7 +267,7 @@ class AthleteOut(BaseModel):
     coach_notes: str | None = None
     intake: AthleteIntake = Field(default_factory=AthleteIntake)
     thresholds: list[ThresholdOut] = Field(default_factory=list)
-    openai_configured: bool = False
+    gemini_configured: bool = False
 
 
 class GarminStatusOut(BaseModel):

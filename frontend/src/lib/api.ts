@@ -187,7 +187,7 @@ export type Athlete = {
   coach_notes?: string | null;
   intake?: AthleteIntake | null;
   thresholds?: Threshold[];
-  openai_configured?: boolean;
+  gemini_configured?: boolean;
 };
 
 export type FileImportStatus = {
@@ -752,7 +752,7 @@ export type PortalStatus = {
   intake_complete: boolean;
   garmin: PortalGarmin;
   coach_name: string;
-  openai_configured: boolean;
+  gemini_configured: boolean;
 };
 
 export type PortalActivity = {

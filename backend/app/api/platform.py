@@ -584,7 +584,7 @@ def create_brief(
         )
     except RuntimeError as exc:
         code = str(exc).split(":", 1)[0]
-        status = 503 if code == "openai_not_configured" else 502
+        status = 503 if code == "gemini_not_configured" else 502
         raise HTTPException(status_code=status, detail={"code": code, "message": "The coaching brief was not stored."}) from exc
     return {"status": brief.status, "created_at": brief.created_at.isoformat(), "report": brief.report}
 
@@ -915,12 +915,12 @@ def import_program(
         raise HTTPException(status_code=422, detail={"code": "unreadable_plan", "message": str(exc)}) from exc
     except RuntimeError as exc:
         code = str(exc).split(":", 1)[0]
-        status = 503 if code == "openai_not_configured" else 502
+        status = 503 if code == "gemini_not_configured" else 502
         raise HTTPException(status_code=status, detail={"code": code, "message": "The program was not read."}) from exc
     except Exception as exc:
         from app.coach.engine import safe_error
 
-        raise HTTPException(status_code=502, detail={"code": "openai_error", "message": safe_error(exc)}) from exc
+        raise HTTPException(status_code=502, detail={"code": "gemini_error", "message": safe_error(exc)}) from exc
     if not plans:
         raise HTTPException(
             status_code=422,

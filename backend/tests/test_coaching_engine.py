@@ -275,7 +275,7 @@ def test_pipeline_runs_analyst_then_coach_and_revises_a_bad_draft() -> None:
         return _brief()
 
     class Settings:
-        openai_model = "test-model"
+        gemini_model = "test-model"
 
     report, trace = run_coaching_analysis(Settings(), _context(), complete)
     assert calls == ["workout_analyst_notes", "workout_coaching_report", "workout_coaching_report"]

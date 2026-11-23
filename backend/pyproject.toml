@@ -19,7 +19,7 @@ dependencies = [
   "fitdecode>=0.10",
   "numpy>=2",
   "pandas>=2.2",
-  "openai>=1.50",
+  "google-genai>=1.50",
 ]
 
 [project.optional-dependencies]
@@ -29,7 +29,7 @@ analysis = [
   "fitdecode>=0.10",
 ]
 ai = [
-  "openai>=1.50",
+  "google-genai>=1.50",
 ]
 dev = [
   "pytest>=8,<9",

@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.coach.analysis import detected_type, run_coaching_analysis, surrounding_sessions
+from app.coach.gemini import complete_messages, gemini_configured, run_tool_chat
 from app.config import Settings, get_settings
 from app.garmin.mapping import pace_seconds_per_mile
 from app.metrics.engine import activity_metrics
@@ -196,8 +197,8 @@ def present_report(
     return shown
 
 
-def openai_configured(settings: Settings) -> bool:
-    return bool(settings.openai_api_key.strip())
+def gemini_ready(settings: Settings) -> bool:
+    return gemini_configured(settings)
 
 
 def _lap_payload(lap: ActivityLap) -> dict:
@@ -728,36 +729,6 @@ TOOLS = [
 ]
 
 
-def _client(settings: Settings, *, timeout: float = 120.0):
-    from openai import OpenAI
-
-    return OpenAI(api_key=settings.openai_api_key, timeout=timeout, max_retries=1)
-
-
-def _completion(client, **kwargs):
-    reasoning_effort = kwargs.pop("reasoning_effort", "none")
-    try:
-        return client.chat.completions.create(**kwargs, extra_body={"reasoning_effort": reasoning_effort})
-    except Exception:
-        logger.info("Model call with reasoning_effort=%s was rejected; retrying without it", reasoning_effort)
-        return client.chat.completions.create(**kwargs)
-
-
-def _response_tools() -> list[dict]:
-    converted = []
-    for tool in TOOLS:
-        function = tool["function"]
-        converted.append(
-            {
-                "type": "function",
-                "name": function["name"],
-                "description": function["description"],
-                "parameters": function["parameters"],
-            }
-        )
-    return converted
-
-
 def _measured_activity(session: Session, athlete: Athlete, activity: Activity, classification: WorkoutClassification | None) -> dict:
     payload = build_metrics(session, athlete, activity)
     brief = _activity_brief(activity, classification)
@@ -1004,21 +975,21 @@ def _planned_vs_actual(session: Session, athlete: Athlete, activity: Activity) -
 
 
 def _structured_completion(settings: Settings, *, model: str, reasoning_effort: str, system: str, user: str, schema_name: str, schema: dict) -> dict:
-    client = _client(settings, timeout=180.0)
+    del schema_name
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": user},
     ]
     last_error = "The model returned no JSON."
     for _attempt in range(2):
-        completion = _completion(
-            client,
+        text = complete_messages(
+            settings,
             model=model,
             reasoning_effort=reasoning_effort,
-            response_format={"type": "json_schema", "json_schema": {"name": schema_name, "strict": True, "schema": schema}},
+            response_format={"type": "json_schema", "json_schema": {"name": "report", "strict": True, "schema": schema}},
             messages=messages,
+            timeout=180.0,
         )
-        text = completion.choices[0].message.content or ""
         try:
             return json.loads(text)
         except json.JSONDecodeError as exc:
@@ -1029,8 +1000,8 @@ def _structured_completion(settings: Settings, *, model: str, reasoning_effort: 
 
 
 def generate_report(session: Session, settings: Settings, athlete: Athlete, activity: Activity) -> WorkoutAnalysis:
-    if not openai_configured(settings):
-        raise RuntimeError("openai_not_configured")
+    if not gemini_ready(settings):
+        raise RuntimeError("gemini_not_configured")
     context = build_report_context(session, athlete, activity)
     detected, confidence = detected_type(context)
     workout_type = detected if confidence >= 0.6 and detected else (context.get("current_activity") or {}).get("activity", {}).get("workout_type")
@@ -1061,7 +1032,7 @@ def generate_report(session: Session, settings: Settings, athlete: Athlete, acti
     row = WorkoutAnalysis(
         activity_id=activity.id,
         status="ready",
-        model=settings.openai_model,
+        model=settings.gemini_model,
         report=report,
         created_at=now,
     )
@@ -1139,8 +1110,8 @@ def chat(
     athletes: list[Athlete] | None = None,
     audience: str = "coach",
 ) -> tuple[AiConversation, list[AiMessage]]:
-    if not openai_configured(settings):
-        raise RuntimeError("openai_not_configured")
+    if not gemini_ready(settings):
+        raise RuntimeError("gemini_not_configured")
     roster = [athlete] if audience == "athlete" else (athletes or [athlete])
     now = datetime.now(UTC)
     conversation = None
@@ -1196,48 +1167,23 @@ def chat(
     for item in history:
         if item.role in {"user", "assistant"}:
             messages.append({"role": item.role, "content": item.content})
-    client = _client(settings)
     instructions = "\n\n".join(item["content"] for item in messages if item["role"] == "system")
-    model_input: list[dict] = [
+    model_input = [
         {"role": item["role"], "content": item["content"]}
         for item in messages
         if item["role"] in {"user", "assistant"}
     ]
-    trace: list[dict] = []
-    reply = ""
-    for _round in range(6):
-        response = client.responses.create(
-            model=settings.openai_model,
-            instructions=instructions,
-            input=model_input,
-            tools=_response_tools(),
-            reasoning={"effort": "low"},
-            store=False,
-        )
-        calls = [item for item in response.output if getattr(item, "type", None) == "function_call"]
-        if not calls:
-            reply = response.output_text or ""
-            break
-        model_input.extend(item.model_dump(exclude_none=True) for item in response.output)
-        for call in calls:
-            try:
-                arguments = json.loads(call.arguments or "{}")
-            except json.JSONDecodeError:
-                arguments = {}
-            try:
-                result = run_tool(session, roster, call.name, arguments)
-            except Exception as exc:
-                result = {"error": safe_error(exc)}
-            trace.append({"name": call.name, "arguments": arguments})
-            model_input.append(
-                {
-                    "type": "function_call_output",
-                    "call_id": call.call_id,
-                    "output": json.dumps(result, default=str),
-                }
-            )
-    else:
-        reply = reply or "I could not finish an answer from the stored activities."
+    reply, trace = run_tool_chat(
+        settings,
+        model=settings.gemini_model,
+        system=instructions,
+        messages=model_input,
+        tools=TOOLS,
+        run_tool=lambda name, arguments: run_tool(session, roster, name, arguments),
+        reasoning_effort="low",
+    )
+    if not reply:
+        reply = "I could not finish an answer from the stored activities."
     assistant = AiMessage(
         conversation_id=conversation.id,
         role="assistant",

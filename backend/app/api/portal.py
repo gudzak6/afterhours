@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.routes import _athlete_out, _sync_status_code
-from app.coach.engine import chat, openai_configured, safe_error
+from app.coach.engine import chat, gemini_ready, safe_error
 from app.config import Settings, get_settings
 from app.database import get_db
 from app.models import Athlete
@@ -159,7 +159,7 @@ def _status(db: Session, settings: Settings, athlete: Athlete) -> dict:
         "intake_complete": intake_complete(athlete.intake if isinstance(athlete.intake, dict) else None),
         "garmin": garmin_state(db, athlete.id),
         "coach_name": coach.display_name,
-        "openai_configured": openai_configured(settings),
+        "gemini_configured": gemini_ready(settings),
     }
 
 
@@ -524,12 +524,12 @@ def portal_assistant(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     athlete = _athlete(db, settings, athlete_id)
-    if not openai_configured(settings):
+    if not gemini_ready(settings):
         raise HTTPException(
             status_code=503,
             detail={
-                "code": "openai_not_configured",
-                "message": "Add OPENAI_API_KEY to the API environment. The assistant will not invent an answer.",
+                "code": "gemini_not_configured",
+                "message": "Add GEMINI_API_KEY to the API environment. The assistant will not invent an answer.",
             },
         )
     try:
@@ -543,7 +543,7 @@ def portal_assistant(
             audience="athlete",
         )
     except Exception as exc:
-        raise HTTPException(status_code=502, detail={"code": "openai_error", "message": safe_error(exc)}) from exc
+        raise HTTPException(status_code=502, detail={"code": "gemini_error", "message": safe_error(exc)}) from exc
     return {
         "conversation_id": conversation.id,
         "messages": [

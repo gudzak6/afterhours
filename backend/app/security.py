@@ -8,6 +8,7 @@ _SECRET_PATTERNS = (
     re.compile(r"(?i)authorization\s*:\s*(?:bearer\s+|apikey\s+)?\S+"),
     re.compile(r"(?i)\b(?:apikey|bearer)\s+\S+"),
     re.compile(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"),
+    re.compile(r"AIza[0-9A-Za-z_-]{20,}"),
 )
 
 
