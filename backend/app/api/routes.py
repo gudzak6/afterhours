@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.database import get_db
-from app.coach.engine import chat, generate_report, openai_configured, present_report, safe_error
+from app.coach.engine import chat, openai_configured, present_report, report_progress, safe_error, start_report
 from app.fit.importer import file_import_status, import_one, start_file_import
 from app.garmin.mapping import METERS_PER_MILE, pace_seconds_per_mile
 from app.metrics.engine import activity_metrics
@@ -420,10 +420,11 @@ def get_activity(
     )
     analysis = db.scalar(
         select(WorkoutAnalysis)
-        .where(WorkoutAnalysis.activity_id == activity.id)
+        .where(WorkoutAnalysis.activity_id == activity.id, WorkoutAnalysis.status == "ready")
         .order_by(WorkoutAnalysis.id.desc())
         .limit(1)
     )
+    progress, report_error = report_progress(activity.id)
     preferences = athlete.workout_preferences or {}
     lap_dicts = []
     for lap in laps:
@@ -543,7 +544,12 @@ def get_activity(
             distance_meters=activity.distance_meters,
             average_speed_mps=activity.average_speed_mps,
         ),
-        report_status="not_started" if analysis is None else analysis.status,
+        report_status=(
+            progress
+            or ("failed" if report_error else None)
+            or ("not_started" if analysis is None else analysis.status)
+        ),
+        report_error=report_error,
         fit_summary=activity.fit_summary,
         workout_steps_found=step_count > 0,
     )
@@ -710,17 +716,8 @@ def create_report(
                 "message": "Add OPENAI_API_KEY to the API environment to generate a report. No report was invented.",
             },
         )
-    owner = db.get(Athlete, activity.athlete_id)
-    if owner is None:
-        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Athlete not found"})
-    try:
-        row = generate_report(db, settings, owner, activity)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=502,
-            detail={"code": "openai_error", "message": safe_error(exc)},
-        ) from exc
-    return {"status": row.status, "model": row.model, "report": row.report}
+    status = start_report(activity.id)
+    return {"status": status, "model": settings.openai_model, "report": None}
 
 
 @router.post("/api/coach/chat", response_model=ChatResponse)

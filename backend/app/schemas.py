@@ -340,6 +340,7 @@ class ActivityDetailOut(BaseModel):
     series: list[SeriesPoint]
     report: dict | None
     report_status: str
+    report_error: str | None = None
     fit_summary: dict | None
     workout_steps_found: bool
 

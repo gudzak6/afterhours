@@ -131,6 +131,7 @@ export type ActivityDetail = {
   series: SeriesPoint[];
   report: Record<string, unknown> | null;
   report_status: string;
+  report_error?: string | null;
   fit_summary: Record<string, unknown> | null;
   workout_steps_found: boolean;
 };
@@ -276,7 +277,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     try {
       body = JSON.parse(text) as unknown;
     } catch {
-      throw new ApiError("The coaching server is not connected to this site.", response.status || 502, null);
+      throw new ApiError("The coaching server returned an unexpected page. Refresh and try again.", response.status || 502, null);
     }
   }
   if (!response.ok) {
@@ -373,11 +374,24 @@ export function updateClassification(activityId: number, workoutType: string, at
   });
 }
 
-export function createReport(activityId: number, athleteId?: number | null) {
-  return request<{ status: string; model: string | null; report: Record<string, unknown> }>(
+export async function createReport(activityId: number, athleteId?: number | null) {
+  const started = await request<{ status: string; model: string | null; report: Record<string, unknown> | null }>(
     `/api/activities/${activityId}/report${activityQuery(athleteId)}`,
     { method: "POST", body: "{}" },
   );
+  if (started.status !== "running") return started;
+  const deadline = Date.now() + 180_000;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => window.setTimeout(resolve, 3000));
+    const detail = await getActivity(activityId, athleteId);
+    if (detail.report_status === "failed") {
+      throw new ApiError(detail.report_error || "The analysis failed.", 502, null);
+    }
+    if (detail.report_status !== "running" && detail.report) {
+      return { status: detail.report_status, model: started.model, report: detail.report };
+    }
+  }
+  throw new ApiError("The analysis is still running. Refresh in a moment.", 504, null);
 }
 
 export function sendChat(message: string, conversationId: number | null, garminActivityId: number | null, athleteId?: number | null) {

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
@@ -12,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.coach.analysis import detected_type, run_coaching_analysis, surrounding_sessions
-from app.config import Settings
+from app.config import Settings, get_settings
 from app.garmin.mapping import pace_seconds_per_mile
 from app.metrics.engine import activity_metrics
 from app.services.history import training_history
@@ -1074,6 +1075,56 @@ def generate_report(session: Session, settings: Settings, athlete: Athlete, acti
         len(trace.get("guard_violations") or []),
     )
     return row
+
+
+_report_guard = threading.Lock()
+_reports_running: set[int] = set()
+_report_errors: dict[int, str] = {}
+
+
+def start_report(activity_id: int) -> str:
+    """Start the model call without holding the HTTP request open."""
+    with _report_guard:
+        if activity_id in _reports_running:
+            return "running"
+        _reports_running.add(activity_id)
+        _report_errors.pop(activity_id, None)
+    threading.Thread(
+        target=_write_report,
+        args=(activity_id,),
+        name=f"report-{activity_id}",
+        daemon=True,
+    ).start()
+    return "running"
+
+
+def report_progress(activity_id: int) -> tuple[str | None, str | None]:
+    with _report_guard:
+        if activity_id in _reports_running:
+            return "running", None
+        return None, _report_errors.get(activity_id)
+
+
+def _write_report(activity_id: int) -> None:
+    from app.database import SessionLocal
+
+    session = SessionLocal()
+    try:
+        activity = session.get(Activity, activity_id)
+        athlete = None if activity is None else session.get(Athlete, activity.athlete_id)
+        if activity is None or athlete is None:
+            raise RuntimeError("activity_not_found")
+        generate_report(session, get_settings(), athlete, activity)
+        with _report_guard:
+            _report_errors.pop(activity_id, None)
+    except Exception as exc:
+        logger.exception("Background coaching report failed for activity %s", activity_id)
+        with _report_guard:
+            _report_errors[activity_id] = safe_error(exc)
+    finally:
+        session.close()
+        with _report_guard:
+            _reports_running.discard(activity_id)
 
 
 def chat(
