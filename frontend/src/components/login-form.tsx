@@ -10,9 +10,15 @@ import { errorMessage } from "@/lib/api";
 
 const fieldClass = "mt-1 h-9 w-full rounded-lg border border-input bg-card px-3 text-sm";
 
-export function LoginForm({ onSignedIn }: { onSignedIn?: () => void | Promise<void> }) {
+export function LoginForm({
+  onSignedIn,
+  initialMode = "sign-in",
+}: {
+  onSignedIn?: () => void | Promise<void>;
+  initialMode?: "sign-in" | "create";
+}) {
   const router = useRouter();
-  const [mode, setMode] = useState<"sign-in" | "create">("sign-in");
+  const [mode, setMode] = useState<"sign-in" | "create">(initialMode);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

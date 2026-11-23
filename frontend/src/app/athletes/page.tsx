@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { Check, ChevronRight } from "lucide-react";
+import { Check, ChevronRight, X } from "lucide-react";
 import { AthleteName } from "@/components/athlete-name";
 import { errorMessage, getActivities, getDashboard, type Activity, type CoachDashboard, type RosterAthlete } from "@/lib/api";
 
@@ -76,6 +76,7 @@ export default function AthletesPage() {
   const [dashboard, setDashboard] = useState<CoachDashboard | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -95,6 +96,15 @@ export default function AthletesPage() {
     return () => window.clearTimeout(timer);
   }, [load]);
 
+  useEffect(() => {
+    if (!adding) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setAdding(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [adding]);
+
   const athletes = dashboard?.athletes ?? [];
   const countLabel = `${athletes.length} athlete${athletes.length === 1 ? "" : "s"}`;
 
@@ -103,10 +113,19 @@ export default function AthletesPage() {
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {!dashboard && !error ? <p className="text-sm text-muted-foreground">Loading the roster…</p> : null}
       {dashboard ? (
-        <section className="overflow-hidden rounded-xl border border-foreground/10 bg-white shadow-sm">
-          <header className="flex items-center justify-between gap-4 border-b border-foreground/10 px-5 py-4">
+        <section className="overflow-hidden rounded-xl border border-border bg-card">
+          <header className="flex items-center justify-between gap-4 border-b border-border px-5 py-4">
             <h1 className="text-lg font-semibold tracking-tight">Athletes</h1>
-            <p className="text-sm text-muted-foreground">{countLabel}</p>
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-muted-foreground">{countLabel}</p>
+              <button
+                type="button"
+                onClick={() => setAdding(true)}
+                className="inline-flex h-8 items-center rounded-lg bg-primary px-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/80"
+              >
+                Add athlete
+              </button>
+            </div>
           </header>
           {athletes.length === 0 ? (
             <p className="px-5 py-6 text-sm text-muted-foreground">No athletes on the roster.</p>
@@ -116,7 +135,7 @@ export default function AthletesPage() {
                 const week = weekMileage(dashboard.today, athlete, activities, dashboard);
                 const shown = week.total == null ? "0.0 mi" : `${week.total.toFixed(1)} mi`;
                 return (
-                  <li key={athlete.id} className="border-b border-foreground/10 last:border-0">
+                  <li key={athlete.id} className="border-b border-border last:border-0">
                     <Link
                       href={`/athletes/${athlete.id}`}
                       className="flex flex-col gap-4 px-5 py-4 transition-colors hover:bg-foreground/[0.03] sm:flex-row sm:items-center sm:justify-between"
@@ -145,6 +164,28 @@ export default function AthletesPage() {
             </ul>
           )}
         </section>
+      ) : null}
+      {adding ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4" onClick={() => setAdding(false)}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-athlete-title"
+            className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-sm"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <h2 id="add-athlete-title" className="text-lg font-semibold tracking-tight">Add athlete</h2>
+              <button type="button" onClick={() => setAdding(false)} className="rounded-md p-1 text-muted-foreground hover:text-foreground" aria-label="Close">
+                <X className="size-4" />
+              </button>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">
+              To add an athlete, they need to sign up and connect their device for tracking. Athlete can sign up{" "}
+              <Link href="/login?signup=1" className="text-foreground underline">here</Link>.
+            </p>
+          </div>
+        </div>
       ) : null}
     </div>
   );

@@ -4,9 +4,19 @@ import { Flag, Star } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { errorMessage, getAthleteGoals, saveAthleteGoal, saveRace, type AthleteGoals, type RaceEntry } from "@/lib/api";
+import { deleteRace, errorMessage, getAthleteGoals, saveAthleteGoal, saveRace, type AthleteGoals, type RaceEntry } from "@/lib/api";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const fieldClass = "mt-1 h-9 w-full rounded-lg border border-input bg-card px-3";
+
+type RaceForm = {
+  name: string;
+  raceDate: string;
+  distance: string;
+  goalTime: string;
+};
+
+const emptyForm: RaceForm = { name: "", raceDate: "", distance: "", goalTime: "" };
 
 function parseDay(iso: string) {
   const [year, month, day] = iso.split("-").map(Number);
@@ -19,16 +29,26 @@ function dateLabel(iso: string) {
 }
 
 function distanceLabel(race: RaceEntry) {
+  if (race.distance_label) return race.distance_label;
   if (race.distance_meters != null && race.distance_meters > 0) {
     const miles = race.distance_meters / 1609.344;
     return `${miles.toFixed(1)} mi`;
   }
-  return race.distance_label;
+  return "";
 }
 
 function isGoal(race: RaceEntry, goals: AthleteGoals | null) {
   if (!goals?.primary_race_goal) return false;
   return race.name.trim().toLowerCase() === goals.primary_race_goal.trim().toLowerCase();
+}
+
+function formFrom(race: RaceEntry): RaceForm {
+  return {
+    name: race.name,
+    raceDate: race.race_date ?? "",
+    distance: race.distance_label ?? "",
+    goalTime: race.goal_time ?? "",
+  };
 }
 
 export function AthleteRaces({
@@ -42,10 +62,9 @@ export function AthleteRaces({
 }) {
   const [saved, setSaved] = useState<AthleteGoals | null>(null);
   const goals = saved ?? { primary_race_goal: goal?.primary_race_goal ?? null, goal_race_date: goal?.goal_race_date ?? null, target_time: goal?.target_time ?? null, races };
+  const [form, setForm] = useState<RaceForm>(emptyForm);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
-  const [name, setName] = useState("");
-  const [raceDate, setRaceDate] = useState("");
-  const [distance, setDistance] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,6 +74,26 @@ export function AthleteRaces({
     setSaved(await getAthleteGoals(athleteId));
   }
 
+  function openAdd() {
+    setAdding(true);
+    setEditingId(null);
+    setForm(emptyForm);
+    setError(null);
+  }
+
+  function openEdit(race: RaceEntry) {
+    setAdding(false);
+    setEditingId(race.id);
+    setForm(formFrom(race));
+    setError(null);
+  }
+
+  function closeForm() {
+    setAdding(false);
+    setEditingId(null);
+    setForm(emptyForm);
+  }
+
   async function choose(race: RaceEntry) {
     setBusy(true);
     setError(null);
@@ -62,7 +101,7 @@ export function AthleteRaces({
       setSaved(await saveAthleteGoal(athleteId, {
         primary_race_goal: race.name,
         goal_race_date: race.race_date,
-        target_time: race.goal_time || goals.target_time || null,
+        target_time: race.goal_time || null,
       }));
     } catch (saveError) {
       setError(errorMessage(saveError));
@@ -71,30 +110,54 @@ export function AthleteRaces({
     }
   }
 
-  async function onAdd(event: FormEvent) {
+  async function onSave(event: FormEvent) {
     event.preventDefault();
+    const editing = editingId == null ? null : goals.races.find((race) => race.id === editingId) ?? null;
     setBusy(true);
     setError(null);
     try {
-      const created = await saveRace(athleteId, {
-        name: name.trim(),
-        race_date: raceDate || null,
-        distance_label: distance.trim() || null,
-      });
-      if (goals.races.length === 0) {
+      const savedRace = await saveRace(athleteId, {
+        name: form.name.trim(),
+        race_date: form.raceDate || null,
+        distance_label: form.distance.trim() || null,
+        goal_time: form.goalTime.trim() || null,
+        result_time: editing?.result_time ?? null,
+        notes: editing?.notes ?? null,
+      }, editing?.id);
+      const wasGoal = editing != null && isGoal(editing, goals);
+      const firstRace = editing == null && goals.races.length === 0;
+      if (wasGoal || firstRace) {
         await saveAthleteGoal(athleteId, {
-          primary_race_goal: created.name,
-          goal_race_date: created.race_date,
-          target_time: goals.target_time || null,
+          primary_race_goal: savedRace.name,
+          goal_race_date: savedRace.race_date,
+          target_time: savedRace.goal_time,
         });
       }
-      setName("");
-      setRaceDate("");
-      setDistance("");
-      setAdding(false);
+      closeForm();
       await refresh();
     } catch (saveError) {
       setError(errorMessage(saveError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(race: RaceEntry) {
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteRace(athleteId, race.id);
+      if (isGoal(race, goals)) {
+        await saveAthleteGoal(athleteId, {
+          primary_race_goal: null,
+          goal_race_date: null,
+          target_time: null,
+        });
+      }
+      if (editingId === race.id) closeForm();
+      await refresh();
+    } catch (removeError) {
+      setError(errorMessage(removeError));
     } finally {
       setBusy(false);
     }
@@ -109,25 +172,34 @@ export function AthleteRaces({
             Races
           </CardTitle>
           <p className="mt-1 text-sm text-muted-foreground">
-            {trainingFor ? `Training for ${trainingFor.name}.` : "Choose the race this athlete is training for."}
+            {trainingFor
+              ? `Training for ${trainingFor.name}${trainingFor.goal_time ? `, goal ${trainingFor.goal_time}` : ""}.`
+              : "Choose the race this athlete is training for."}
           </p>
         </div>
         {goals.races.length > 0 ? (
-          <Button type="button" variant="outline" size="sm" onClick={() => setAdding((open) => !open)}>
-            Add
+          <Button type="button" variant="outline" size="sm" onClick={() => (adding ? closeForm() : openAdd())}>
+            {adding ? "Cancel" : "Add"}
           </Button>
         ) : null}
       </CardHeader>
       <CardContent className="space-y-3">
         {goals.races.length === 0 && !adding ? (
-          <button type="button" onClick={() => setAdding(true)} className="inline-flex min-h-11 items-center text-sm font-medium underline">
+          <button type="button" onClick={openAdd} className="inline-flex min-h-11 items-center text-sm font-medium underline">
             Add a race
           </button>
         ) : null}
         <ul className="space-y-2">
           {goals.races.map((race) => {
-            const goal = isGoal(race, goals);
+            const goalRace = isGoal(race, goals);
             const when = race.race_date ? parseDay(race.race_date) : null;
+            if (editingId === race.id) {
+              return (
+                <li key={race.id}>
+                  <RaceFormFields form={form} setForm={setForm} busy={busy} submitLabel="Save race" onSubmit={onSave} onCancel={closeForm} />
+                </li>
+              );
+            }
             return (
               <li key={race.id} className="rounded-lg border border-border px-3 py-2">
                 <div className="flex items-start gap-3">
@@ -146,11 +218,20 @@ export function AthleteRaces({
                         type="button"
                         disabled={busy}
                         onClick={() => void choose(race)}
-                        aria-pressed={goal}
-                        aria-label={goal ? `${race.name} is the race they are training for` : `Train for ${race.name}`}
-                        className={`inline-flex size-11 shrink-0 items-center justify-center ${goal ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                        aria-pressed={goalRace}
+                        aria-label={goalRace ? `${race.name} is the race they are training for` : `Train for ${race.name}`}
+                        className={`inline-flex size-8 shrink-0 items-center justify-center ${goalRace ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
                       >
-                        <Star className={`size-4 ${goal ? "fill-current" : ""}`} />
+                        <Star className={`size-4 ${goalRace ? "fill-current" : ""}`} />
+                      </button>
+                    </div>
+                    {race.goal_time ? <p className="text-sm text-muted-foreground">Goal {race.goal_time}</p> : null}
+                    <div className="mt-1 flex gap-3 text-sm">
+                      <button type="button" className="text-muted-foreground underline hover:text-foreground" disabled={busy} onClick={() => openEdit(race)}>
+                        Edit
+                      </button>
+                      <button type="button" className="text-muted-foreground underline hover:text-foreground" disabled={busy} onClick={() => void remove(race)}>
+                        Delete
                       </button>
                     </div>
                   </div>
@@ -159,27 +240,50 @@ export function AthleteRaces({
             );
           })}
         </ul>
-        {adding ? (
-          <form onSubmit={(event) => void onAdd(event)} className="grid gap-2 sm:grid-cols-3">
-            <label className="text-sm sm:col-span-3">
-              Race
-              <input value={name} onChange={(event) => setName(event.target.value)} className="mt-1 h-9 w-full rounded-lg border border-input bg-card px-3" required />
-            </label>
-            <label className="text-sm">
-              Date
-              <input type="date" value={raceDate} onChange={(event) => setRaceDate(event.target.value)} className="mt-1 h-9 w-full rounded-lg border border-input bg-card px-3" />
-            </label>
-            <label className="text-sm sm:col-span-2">
-              Distance
-              <input value={distance} onChange={(event) => setDistance(event.target.value)} placeholder="Marathon, mile, 5K" className="mt-1 h-9 w-full rounded-lg border border-input bg-card px-3" />
-            </label>
-            <div className="sm:col-span-3">
-              <Button type="submit" disabled={busy || name.trim().length === 0}>{busy ? "Saving…" : "Save race"}</Button>
-            </div>
-          </form>
-        ) : null}
+        {adding ? <RaceFormFields form={form} setForm={setForm} busy={busy} submitLabel="Save race" onSubmit={onSave} onCancel={closeForm} /> : null}
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
       </CardContent>
     </Card>
+  );
+}
+
+function RaceFormFields({
+  form,
+  setForm,
+  busy,
+  submitLabel,
+  onSubmit,
+  onCancel,
+}: {
+  form: RaceForm;
+  setForm: (update: (form: RaceForm) => RaceForm) => void;
+  busy: boolean;
+  submitLabel: string;
+  onSubmit: (event: FormEvent) => void;
+  onCancel: () => void;
+}) {
+  return (
+    <form onSubmit={(event) => void onSubmit(event)} className="grid gap-2 rounded-lg border border-border px-3 py-3 sm:grid-cols-2">
+      <label className="text-sm sm:col-span-2">
+        Race
+        <input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} className={fieldClass} required />
+      </label>
+      <label className="text-sm">
+        Date
+        <input type="date" value={form.raceDate} onChange={(event) => setForm((current) => ({ ...current, raceDate: event.target.value }))} className={fieldClass} />
+      </label>
+      <label className="text-sm">
+        Distance
+        <input value={form.distance} onChange={(event) => setForm((current) => ({ ...current, distance: event.target.value }))} placeholder="Marathon, mile, 5K" className={fieldClass} />
+      </label>
+      <label className="text-sm sm:col-span-2">
+        Goal time
+        <input value={form.goalTime} onChange={(event) => setForm((current) => ({ ...current, goalTime: event.target.value }))} placeholder="2:55:00" className={fieldClass} />
+      </label>
+      <div className="flex gap-2 sm:col-span-2">
+        <Button type="submit" disabled={busy || form.name.trim().length === 0}>{busy ? "Saving…" : submitLabel}</Button>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={busy}>Cancel</Button>
+      </div>
+    </form>
   );
 }

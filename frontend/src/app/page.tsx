@@ -7,6 +7,7 @@ import { AthleteName } from "@/components/athlete-name";
 import { Button } from "@/components/ui/button";
 import { mirrorRosterRuns } from "@/lib/account";
 import {
+  activityPath,
   createBrief,
   errorMessage,
   getDashboard,
@@ -291,7 +292,7 @@ function AthletePanel({ group, open, onToggle }: { group: AthleteDay; open: bool
   const statusClass = status === "Completed" ? "text-emerald-700" : status === "Pending" ? "text-amber-700" : "text-muted-foreground";
 
   return (
-    <article className="rounded-xl border border-foreground/10 bg-white">
+    <article className="rounded-xl border border-border bg-card">
       <div
         role="button"
         tabIndex={0}
@@ -313,14 +314,14 @@ function AthletePanel({ group, open, onToggle }: { group: AthleteDay; open: bool
             <Link href={`/athletes/${group.athleteId}`} onClick={(event) => event.stopPropagation()} className="font-semibold hover:underline">
               <AthleteName name={group.athleteName} />
             </Link>
-            <span className={`text-sm ${statusClass}`}>{status}</span>
+            {status === "Unplanned" ? null : <span className={`text-sm ${statusClass}`}>{status}</span>}
           </span>
           <span className="mt-0.5 block text-sm text-muted-foreground">{summary}</span>
         </span>
         {open ? <ChevronUp className="mt-1 size-4 shrink-0 text-muted-foreground" /> : <ChevronDown className="mt-1 size-4 shrink-0 text-muted-foreground" />}
       </div>
       {open ? (
-        <div className="space-y-5 border-t border-foreground/10 px-4 py-4">
+        <div className="space-y-5 border-t border-border px-4 py-4">
           <div className="grid gap-5 sm:grid-cols-2">
             <div>
               <p className="flex items-center gap-2 text-xs tracking-[0.14em] text-muted-foreground uppercase">
@@ -343,7 +344,11 @@ function AthletePanel({ group, open, onToggle }: { group: AthleteDay; open: bool
               ) : (
                 <ul className="mt-1 space-y-1 text-sm text-muted-foreground">
                   {group.activities.map((activity) => (
-                    <li key={`${activity.garmin_activity_id}-${activity.start_time_local}`}>{completedLine(activity)}</li>
+                    <li key={`${activity.garmin_activity_id}-${activity.start_time_local}`}>
+                      <Link href={activityPath(activity.garmin_activity_id, group.athleteId)} className="hover:text-foreground hover:underline">
+                        {completedLine(activity)}
+                      </Link>
+                    </li>
                   ))}
                 </ul>
               )}
@@ -583,10 +588,10 @@ export default function DashboardPage() {
           {shiftDay(selectedDay, -parseDay(selectedDay).getDay()) !== dashboard.week_start ? (
             <p className="text-sm text-muted-foreground">Loading {dayLabel(selectedDay)}…</p>
           ) : (
-            <section className="rounded-xl border border-foreground/10 bg-white px-4 py-4 sm:px-5">
+            <section className="rounded-xl border border-border bg-card px-4 py-4 sm:px-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h2 className="font-heading text-xl tracking-tight">Daily Training</h2>
+                  <h2 className="font-heading text-xl tracking-tight">Today&apos;s Training</h2>
                   <p className="mt-1 text-sm text-muted-foreground">{fullDayLabel(selectedDay)}</p>
                 </div>
                 <p className="text-sm text-muted-foreground">{groups.length} {groups.length === 1 ? "athlete" : "athletes"}</p>
@@ -622,7 +627,7 @@ export default function DashboardPage() {
               )}
             </section>
           )}
-          <details className="group rounded-xl border border-foreground/10 bg-white">
+          <details className="group rounded-xl border border-border bg-card">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden">
               <span className="flex items-center gap-2">
                 <span className="font-heading text-xl tracking-tight">Coaching summary</span>
@@ -664,7 +669,7 @@ export default function DashboardPage() {
                 <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
               </span>
             </summary>
-            <div className="space-y-4 border-t border-foreground/10 px-4 py-4">
+            <div className="space-y-4 border-t border-border px-4 py-4">
               {notice ? <p className="text-sm text-muted-foreground">{notice}</p> : null}
               {writingBrief && !dashboard.brief ? (
                 <p className="text-sm text-muted-foreground">Writing the coaching brief for {dayLabel(selectedDay)}…</p>
