@@ -42,6 +42,16 @@ export function workoutDetail(workout: PlannedWorkout): string {
   return bits.join(" · ");
 }
 
+export function planSpecifics(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const lines = text.split(/\r?\n/).filter((line) => {
+    const stripped = line.trim();
+    return stripped.length > 0 && !/^=+$/.test(stripped);
+  });
+  const cleaned = lines.join("\n").trim();
+  return cleaned || null;
+}
+
 export function planText(workout: PlannedWorkout): string {
   const written = workout.details?.trim();
   if (written) return written;

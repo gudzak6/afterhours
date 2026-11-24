@@ -215,7 +215,16 @@ def _planned_summary(plan: ScheduledWorkout, athlete_name: str | None) -> dict:
         "scheduled_date": plan.scheduled_date.isoformat(),
         "title": plan.title,
         "detail": " · ".join(bits) or None,
+        "prescription": _prescription(plan.details),
     }
+
+
+def _prescription(text: str | None) -> str | None:
+    if not text:
+        return None
+    lines = [line.rstrip() for line in text.splitlines() if line.strip() and set(line.strip()) != {"="}]
+    cleaned = "\n".join(lines).strip()
+    return cleaned[:2000] or None
 
 
 def _classification_marks(db: Session, activities: list[Activity]) -> dict[int, dict]:

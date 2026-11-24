@@ -4,6 +4,8 @@ import Link from "next/link";
 import { Calendar, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleCheck, Info, RefreshCw, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { AthleteName } from "@/components/athlete-name";
+import { planSpecifics } from "@/components/athlete-ui";
+import { ZonePaces } from "@/components/training-zones";
 import { mirrorRosterRuns } from "@/lib/account";
 import {
   activityPath,
@@ -248,20 +250,24 @@ function AthletePanel({
         <div className="space-y-3 border-t border-border px-3 py-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">
-              <p className="flex items-center gap-2 text-xs tracking-[0.14em] text-muted-foreground uppercase">
+              <div className="flex items-center gap-2 text-xs tracking-[0.14em] text-muted-foreground uppercase">
                 <Calendar className="size-3.5" />
                 Planned
-              </p>
+                {group.planned.length > 0 ? <ZonePaces athleteId={group.athleteId} /> : null}
+              </div>
               {group.planned.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No workout assigned</p>
-              ) : group.planned.map((plan) => (
-                <div key={plan.id} className="rounded-lg border border-border bg-background px-2.5 py-2">
-                  <span className="min-w-0">
+              ) : group.planned.map((plan) => {
+                const measured = (plan.detail ?? "").split(" · ").filter((part) => /\d/.test(part)).join(" · ");
+                const specifics = planSpecifics(plan.prescription);
+                return (
+                  <div key={plan.id} className="rounded-lg border border-border bg-background px-2.5 py-2">
                     <span className="block text-sm font-medium">{plan.title}</span>
-                    {plan.detail ? <span className="block text-xs text-muted-foreground">{(plan.detail.split(" · ").filter((part) => /\d/.test(part)).join(" · ")) || plan.detail}</span> : null}
-                  </span>
-                </div>
-              ))}
+                    {measured ? <span className="block text-xs text-muted-foreground">{measured}</span> : null}
+                    {specifics ? <span className="mt-1 block whitespace-pre-wrap text-xs leading-5 text-muted-foreground">{specifics}</span> : null}
+                  </div>
+                );
+              })}
             </div>
             <div className="space-y-2">
               <p className="flex items-center gap-2 text-xs tracking-[0.14em] text-muted-foreground uppercase">

@@ -26,6 +26,7 @@ type PlanRow = {
   rep_distance_miles: number | null;
   target_pace: string | null;
   intensity: string | null;
+  details?: string | null;
 };
 
 type ActivityRow = {
@@ -202,7 +203,7 @@ export async function loadAccountDashboard(supabase: SupabaseClient, day?: strin
     readableRows<PlanRow>(
       supabase
         .from("scheduled_workouts")
-        .select("id, athlete_id, scheduled_date, title, workout_type, distance_miles, repetitions, rep_distance_miles, target_pace, intensity")
+        .select("id, athlete_id, scheduled_date, title, workout_type, distance_miles, repetitions, rep_distance_miles, target_pace, intensity, details")
         .in("athlete_id", supabaseIds)
         .gte("scheduled_date", span.start)
         .lt("scheduled_date", span.end)
@@ -299,6 +300,7 @@ export async function loadAccountDashboard(supabase: SupabaseClient, day?: strin
         scheduled_date: plan.scheduled_date,
         title: plan.title,
         detail: planDetail(plan),
+        prescription: plan.details?.trim() || null,
       };
     }),
     today,

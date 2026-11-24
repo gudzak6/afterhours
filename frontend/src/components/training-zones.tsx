@@ -36,6 +36,44 @@ function paceSeconds(value: string) {
   return Number.NaN;
 }
 
+export function ZonePaces({ athleteId }: { athleteId: number }) {
+  const [zones, setZones] = useState<PaceEstimate["zones"] | null>(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void getAthleteOverview(athleteId)
+        .then((overview) => {
+          const estimate = paceEstimateFromRecords(overview.races ?? [], overview.running_stats?.best_efforts ?? []);
+          setZones(estimate?.zones ?? []);
+        })
+        .catch(() => setZones([]));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [athleteId]);
+
+  if (!zones || zones.length === 0) return null;
+  const label = zones.map((zone) => `${zone.name} ${zone.range} per mile`).join(". ");
+  return (
+    <span className="group/zones relative inline-flex normal-case">
+      <button
+        type="button"
+        className="text-[11px] font-normal tracking-normal text-muted-foreground underline decoration-dotted underline-offset-2"
+        aria-label={label}
+        onClick={(event) => event.preventDefault()}
+      >
+        Zones
+      </button>
+      <span className="pointer-events-none absolute top-full left-0 z-10 mt-2 hidden w-56 border border-foreground/20 bg-background px-3 py-2 text-left text-[11px] leading-5 font-normal tracking-normal text-foreground normal-case group-hover/zones:block group-focus-within/zones:block">
+        {zones.map((zone) => (
+          <span key={zone.name} className="block">
+            {zone.name} {zone.range}/mi
+          </span>
+        ))}
+      </span>
+    </span>
+  );
+}
+
 export function TrainingZones({ athleteId }: { athleteId: number }) {
   const [estimate, setEstimate] = useState<PaceEstimate | null>(null);
   const [maxHeart, setMaxHeart] = useState<number | null>(null);

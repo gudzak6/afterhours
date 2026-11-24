@@ -4,7 +4,8 @@ import Link from "next/link";
 import { Calendar, ChevronDown, ChevronLeft, ChevronRight, CircleCheck, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useAthlete } from "@/components/athlete-frame";
-import { durationLabel, milesLabel, paceLabel } from "@/components/athlete-ui";
+import { durationLabel, milesLabel, paceLabel, planSpecifics } from "@/components/athlete-ui";
+import { ZonePaces } from "@/components/training-zones";
 import {
   errorMessage,
   getAthleteCalendar,
@@ -220,18 +221,21 @@ export default function AthleteHomePage() {
             {!weekReady ? <p className="text-sm text-muted-foreground">Loading this week…</p> : null}
             {weekReady ? <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <p className="flex items-center gap-2 text-xs tracking-[0.14em] text-muted-foreground uppercase">
+                <div className="flex items-center gap-2 text-xs tracking-[0.14em] text-muted-foreground uppercase">
                   <Calendar className="size-3.5" />
                   Planned
-                </p>
+                  {planned.length > 0 ? <ZonePaces athleteId={athleteId} /> : null}
+                </div>
                 {planned.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No workout assigned</p>
                 ) : planned.map((workout) => {
                   const miles = milesById.get(workout.id);
+                  const specifics = planSpecifics(workout.details);
                   return (
                     <Link key={workout.id} href={`/athlete/workouts/${workout.id}`} className="block rounded-lg border border-border bg-background px-2.5 py-2 hover:bg-muted">
                       <span className="block text-sm font-medium">{workout.title}</span>
                       {miles != null ? <span className="block text-xs text-muted-foreground">{miles.toFixed(2)} mi</span> : null}
+                      {specifics ? <span className="mt-1 block whitespace-pre-wrap text-xs leading-5 text-muted-foreground">{specifics}</span> : null}
                     </Link>
                   );
                 })}

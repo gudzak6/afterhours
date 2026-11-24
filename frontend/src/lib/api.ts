@@ -477,6 +477,7 @@ export type CoachDashboard = {
     scheduled_date: string;
     title: string;
     detail: string | null;
+    prescription?: string | null;
   }>;
   today: string;
   week_start: string;
