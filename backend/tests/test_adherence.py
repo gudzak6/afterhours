@@ -148,6 +148,26 @@ def test_week_number_spreadsheet_uses_the_start_date():
     assert second["scheduled_date"] == date(2026, 11, 29)
 
 
+def test_current_month_tab_keeps_its_dates_and_ignores_older_tabs():
+    import base64
+
+    from app.config import Settings
+    from app.services.program import workouts_from_program
+
+    plans, _errors, source = workouts_from_program(
+        Settings(),
+        "plan.xlsx",
+        None,
+        base64.b64encode(_two_month_workbook()).decode(),
+        today=date(2026, 11, 23),
+        start=date(2026, 11, 30),
+    )
+    assert source == "spreadsheet-dated"
+    by_day = {plan["scheduled_date"]: plan["title"] for plan in plans}
+    assert by_day[date(2026, 11, 23)] == "Drills/strides"
+    assert date(2026, 8, 3) not in by_day
+
+
 def test_spreadsheet_dates_follow_the_selected_start():
     import base64
 
@@ -186,6 +206,50 @@ def test_mileage_and_workout_rows_keep_the_cell_note():
     assert wednesday["coach_notes"].startswith("Easy runs")
     assert by_day[date(2026, 8, 8)]["workout_type"] == "long_run"
     assert date(2026, 8, 4) not in by_day
+
+
+def _two_month_workbook() -> bytes:
+    def sheet(week_serial: str, monday: str) -> str:
+        return f"""<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+  <row r="2">
+    <c r="A2" t="inlineStr"><is><t>Week</t></is></c>
+    <c r="B2" t="inlineStr"><is><t>Monday</t></is></c>
+    <c r="C2" t="inlineStr"><is><t>Tuesday</t></is></c>
+    <c r="D2" t="inlineStr"><is><t>Wednesday</t></is></c>
+    <c r="E2" t="inlineStr"><is><t>Thursday</t></is></c>
+    <c r="F2" t="inlineStr"><is><t>Friday</t></is></c>
+  </row>
+  <row r="3"><c r="A3"><v>{week_serial}</v></c><c r="B3"><v>6</v></c></row>
+  <row r="4"><c r="A4" t="inlineStr"><is><t>Workout</t></is></c><c r="B4" t="inlineStr"><is><t>{monday}</t></is></c></row>
+</sheetData></worksheet>"""
+
+    workbook = """<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="NovDec. 26" sheetId="1" r:id="rId1"/>
+    <sheet name="August" sheetId="2" r:id="rId2"/>
+  </sheets>
+</workbook>"""
+    rels = """<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+</Relationships>"""
+    types = """<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>"""
+    buffer = BytesIO()
+    with ZipFile(buffer, "w") as archive:
+        archive.writestr("[Content_Types].xml", types)
+        archive.writestr("xl/workbook.xml", workbook)
+        archive.writestr("xl/_rels/workbook.xml.rels", rels)
+        archive.writestr("xl/worksheets/sheet1.xml", sheet("46349", "Drills/strides"))
+        archive.writestr("xl/worksheets/sheet2.xml", sheet("46237", "August easy"))
+    return buffer.getvalue()
 
 
 def _mileage_workbook() -> bytes:

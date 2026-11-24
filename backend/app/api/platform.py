@@ -26,6 +26,8 @@ from app.models import (
     TrainingGoal,
     WorkoutAnalysis,
     WorkoutClassification,
+    WorkoutComment,
+    WorkoutFeedback,
 )
 from app.schemas import AthleteOut, AthleteUpdate
 from app.services.adherence import (
@@ -972,18 +974,19 @@ def import_program(
         )
     first = min(item["scheduled_date"] for item in plans)
     last = max(item["scheduled_date"] for item in plans)
-    existing = list(
-        db.scalars(
-            select(ScheduledWorkout).where(
-                ScheduledWorkout.athlete_id == athlete.id,
-                ScheduledWorkout.scheduled_date >= first,
-                ScheduledWorkout.scheduled_date <= last,
-            )
-        ).all()
-    )
+    replaced = select(ScheduledWorkout).where(ScheduledWorkout.athlete_id == athlete.id, ScheduledWorkout.scheduled_date >= first)
+    if source != "spreadsheet-dated":
+        replaced = replaced.where(ScheduledWorkout.scheduled_date <= last)
+    existing = list(db.scalars(replaced).all())
     replaced_ids = [row.id for row in existing]
     if replaced_ids:
         db.execute(delete(PlanRevision).where(PlanRevision.scheduled_workout_id.in_(replaced_ids)))
+        db.execute(
+            WorkoutFeedback.__table__.update().where(WorkoutFeedback.scheduled_workout_id.in_(replaced_ids)).values(scheduled_workout_id=None)
+        )
+        db.execute(
+            WorkoutComment.__table__.update().where(WorkoutComment.scheduled_workout_id.in_(replaced_ids)).values(scheduled_workout_id=None)
+        )
     for row in existing:
         db.delete(row)
     if existing:

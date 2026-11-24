@@ -101,7 +101,7 @@ export function PlanUpload() {
       <CardHeader>
         <CardTitle>Choose a plan</CardTitle>
         <CardDescription>
-          Pick one way to write it. The athlete and start date apply to whichever you choose. Dates in a file are ignored, and the weeks move so the first workout lands on the start date. Workouts already planned in that span are replaced.
+          Pick one way to write it. A spreadsheet that already has calendar dates keeps those dates, and every workout from the first of those dates onward is replaced. A file that only lists week numbers starts on the date you pick.
         </CardDescription>
       </CardHeader>
       <CardContent>

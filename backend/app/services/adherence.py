@@ -527,17 +527,23 @@ _SHEET_MAIN = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 
 
 def parse_plan_xlsx(payload: bytes, *, week_one: date | None = None) -> tuple[list[dict], list[str]]:
+    plans, errors, _absolute = calendar_plans(payload, focus=None, week_one=week_one)
+    return plans, errors
+
+
+def calendar_plans(payload: bytes, *, focus: date | None, week_one: date | None = None) -> tuple[list[dict], list[str], bool]:
+    """Read a workbook. A month tab that contains focus keeps its own dates."""
     try:
         sheets = _xlsx_sheets(payload)
     except ValueError as exc:
-        return [], [str(exc)]
-    plans: list[dict] = []
-    errors: list[str] = []
+        return [], [str(exc)], False
+    blocks: list[tuple[list[dict], list[str]]] = []
+    other: list[dict] = []
     for sheet in sheets:
         block, block_errors, matched = _mileage_block_plans(sheet)
         if matched:
-            plans.extend(block)
-            errors.extend(block_errors)
+            if block:
+                blocks.append((block, block_errors))
             continue
         grid = _sheet_rows(sheet)
         if not grid:
@@ -549,9 +555,32 @@ def parse_plan_xlsx(payload: bytes, *, week_one: date | None = None) -> tuple[li
             continue
         sheet_plans, sheet_errors = _grid_plans(grid[header_index:], week_one=week_one)
         if sheet_plans:
-            plans.extend(sheet_plans)
-            errors.extend(sheet_errors)
-    return plans, errors
+            other.append({"plans": sheet_plans, "errors": sheet_errors})
+    if blocks:
+        chosen, absolute = _current_block(blocks, focus)
+        return chosen[0], chosen[1], absolute
+    plans: list[dict] = []
+    errors: list[str] = []
+    for item in other:
+        plans.extend(item["plans"])
+        errors.extend(item["errors"])
+    return plans, errors, False
+
+
+def _current_block(blocks: list[tuple[list[dict], list[str]]], focus: date | None) -> tuple[tuple[list[dict], list[str]], bool]:
+    if focus is not None:
+        covering = []
+        for plans, errors in blocks:
+            start = min(plan["scheduled_date"] for plan in plans)
+            end = max(plan["scheduled_date"] for plan in plans)
+            if start <= focus <= end + timedelta(days=6):
+                covering.append((plans, errors, start))
+        if covering:
+            plans, errors, _start = max(covering, key=lambda item: item[2])
+            return (plans, errors), True
+    if len(blocks) == 1:
+        return blocks[0], False
+    return max(blocks, key=lambda item: max(plan["scheduled_date"] for plan in item[0])), True
 
 
 def _grid_plans(grid: list[list[str]], *, week_one: date | None) -> tuple[list[dict], list[str]]:

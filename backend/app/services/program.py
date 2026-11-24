@@ -8,7 +8,7 @@ from datetime import date, timedelta
 
 from app.config import Settings
 from app.garmin.mapping import METERS_PER_MILE
-from app.services.adherence import normalize_workout_type, parse_pace, parse_plan_csv, parse_plan_xlsx, spreadsheet_text
+from app.services.adherence import calendar_plans, normalize_workout_type, parse_pace, parse_plan_csv, spreadsheet_text
 
 PROGRAM_PROMPT = """You turn one written running program into scheduled workouts for a coach.
 Use only sessions that are written in the program. Do not add a workout, a pace, a distance, or a rest day that the program does not state.
@@ -93,13 +93,14 @@ def program_text(filename: str, text: str | None, content_base64: str | None) ->
     return text[:20000], raw
 
 
-def _structured(filename: str, text: str, raw: bytes | None, *, week_one: date | None = None) -> tuple[list[dict], list[str]]:
+def _structured(filename: str, text: str, raw: bytes | None, *, week_one: date | None = None, focus: date | None = None) -> tuple[list[dict], list[str], bool]:
     name = filename.lower()
     if name.endswith(".xlsx") and raw is not None:
-        return parse_plan_xlsx(raw, week_one=week_one)
+        return calendar_plans(raw, focus=focus, week_one=week_one)
     if name.endswith(".csv"):
-        return parse_plan_csv(text, week_one=week_one)
-    return [], []
+        plans, errors = parse_plan_csv(text, week_one=week_one)
+        return plans, errors, False
+    return [], [], False
 
 
 def _stored_plan(item: dict) -> dict | None:
@@ -256,7 +257,7 @@ def workouts_from_program(
     start: date,
 ) -> tuple[list[dict], list[str], str]:
     body, raw = program_text(filename, text, content_base64)
-    structured, errors = _structured(filename, body, raw, week_one=start)
+    structured, errors, absolute = _structured(filename, body, raw, week_one=start, focus=today)
     if structured:
         plans = []
         for item in structured:
@@ -264,8 +265,9 @@ def workouts_from_program(
             if stored is not None:
                 plans.append(stored)
         if plans:
-            _place_on_start(plans, start)
-            return plans[:400], errors[:40], "spreadsheet"
+            if not absolute:
+                _place_on_start(plans, start)
+            return plans[:400], errors[:40], "spreadsheet-dated" if absolute else "spreadsheet"
     if filename.lower().endswith(".xlsx"):
         body = spreadsheet_text(raw or b"")
     body = body.strip()[:20000]
