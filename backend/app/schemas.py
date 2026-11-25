@@ -49,6 +49,12 @@ class SyncJobOut(BaseModel):
         )
 
 
+def _stored_account(activity: Activity) -> dict | None:
+    overrides = activity.athlete_overrides or {}
+    account = overrides.get("account") if isinstance(overrides, dict) else None
+    return account if isinstance(account, dict) else None
+
+
 class ActivityOut(BaseModel):
     id: int
     garmin_activity_id: int
@@ -82,6 +88,7 @@ class ActivityOut(BaseModel):
     start_longitude: float | None = None
     athlete_id: int | None = None
     athlete_name: str | None = None
+    athlete_account: dict | None = None
 
     @classmethod
     def from_activity(
@@ -126,6 +133,7 @@ class ActivityOut(BaseModel):
             workout_type=workout_type,
             classification_source=classification_source,
             present_fields=list(activity.present_fields or []),
+            athlete_account=_stored_account(activity),
             start_latitude=activity.start_latitude if include_location else None,
             start_longitude=activity.start_longitude if include_location else None,
             athlete_id=activity.athlete_id,

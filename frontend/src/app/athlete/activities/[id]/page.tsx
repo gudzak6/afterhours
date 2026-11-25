@@ -7,7 +7,7 @@ import { useAthlete } from "@/components/athlete-frame";
 import { CommentList, durationLabel, FeedbackForm, fieldClass, milesLabel, paceLabel } from "@/components/athlete-ui";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { editPortalActivity, errorMessage, getPortalActivity, type PortalActivity, type PlannedWorkout, type WorkoutFeedback, type WorkoutNote } from "@/lib/api";
+import { editPortalActivity, errorMessage, getPortalActivity, saveWorkoutAccount, type PortalActivity, type PlannedWorkout, type WorkoutAccount, type WorkoutFeedback, type WorkoutNote } from "@/lib/api";
 
 export default function AthleteActivityPage() {
   const params = useParams<{ id: string }>();
@@ -63,10 +63,28 @@ export default function AthleteActivityPage() {
       ) : null}
       <Card>
         <CardHeader>
+          <CardTitle>What I actually did</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <AccountForm
+            activity={activity}
+            onSave={async (message) => {
+              setNotice(null);
+              const updated = await saveWorkoutAccount(athleteId, garminId, message);
+              setActivity(updated);
+              setNotice("Saved with this workout. A later Garmin sync keeps it.");
+            }}
+            onError={setError}
+          />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
           <CardTitle>Correct this run</CardTitle>
         </CardHeader>
         <CardContent>
           <EditForm
+            key={`${activity.notes ?? ""}-${activity.distance_miles ?? ""}`}
             activity={activity}
             onSave={async (body) => {
               setNotice(null);
@@ -97,6 +115,69 @@ export default function AthleteActivityPage() {
           />
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function AccountForm({
+  activity,
+  onSave,
+  onError,
+}: {
+  activity: PortalActivity;
+  onSave: (message: string) => Promise<void>;
+  onError: (message: string) => void;
+}) {
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  const account = activity.account;
+
+  async function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      await onSave(message);
+      setMessage("");
+    } catch (saveError) {
+      onError(errorMessage(saveError));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form onSubmit={(event) => void onSubmit(event)} className="space-y-3">
+      <p className="text-sm text-muted-foreground">
+        If the recorded pace or splits are wrong, say what you did. That account is stored with this workout.
+      </p>
+      {account ? <AccountLines account={account} /> : null}
+      <textarea
+        value={message}
+        onChange={(event) => setMessage(event.target.value)}
+        placeholder="The treadmill pace was off. The reps were 6 x 800 at 6:30 with 90 seconds easy."
+        className="min-h-24 w-full rounded-lg border border-input bg-card px-3 py-2 text-sm"
+      />
+      <Button type="submit" disabled={saving || message.trim().length < 8}>{saving ? "Saving…" : "Save this account"}</Button>
+    </form>
+  );
+}
+
+function AccountLines({ account }: { account: WorkoutAccount }) {
+  return (
+    <div className="space-y-1 text-sm">
+      {account.summary ? <p>{account.summary}</p> : null}
+      {account.splits.length > 0 ? (
+        <ul className="space-y-1 text-muted-foreground">
+          {account.splits.map((split, index) => (
+            <li key={`${split.label}-${index}`}>
+              {split.label}
+              {split.distance_miles == null ? "" : ` · ${split.distance_miles.toFixed(2)} mi`}
+              {split.duration_seconds == null ? "" : ` · ${durationLabel(split.duration_seconds)}`}
+              {split.pace ? ` · ${split.pace}/mi` : ""}
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }

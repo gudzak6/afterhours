@@ -14,6 +14,15 @@ export type SyncJob = {
   http_status: number | null;
 };
 
+export type WorkoutAccount = {
+  statement: string;
+  summary: string;
+  distance_miles: number | null;
+  duration_seconds: number | null;
+  average_heart_rate_bpm: number | null;
+  splits: Array<{ label: string; distance_miles: number | null; duration_seconds: number | null; pace: string | null }>;
+};
+
 export type Activity = {
   id: number;
   garmin_activity_id: number;
@@ -47,6 +56,7 @@ export type Activity = {
   start_longitude?: number | null;
   athlete_id?: number | null;
   athlete_name?: string | null;
+  athlete_account?: WorkoutAccount | null;
 };
 
 export type ActivityList = {
@@ -774,6 +784,7 @@ export type PortalActivity = {
   manual: boolean;
   notes: string | null;
   workout_type?: string | null;
+  account?: WorkoutAccount | null;
 };
 
 export type PortalHome = {
@@ -919,6 +930,13 @@ export function logManualActivity(athleteId: number, body: Record<string, unknow
   return request<PortalActivity>(`/api/portal/${athleteId}/activities`, {
     method: "POST",
     body: JSON.stringify(body),
+  });
+}
+
+export function saveWorkoutAccount(athleteId: number, garminActivityId: number, message: string) {
+  return request<PortalActivity>(`/api/portal/${athleteId}/activities/${garminActivityId}/account`, {
+    method: "POST",
+    body: JSON.stringify({ message }),
   });
 }
 

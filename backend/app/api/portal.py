@@ -36,6 +36,7 @@ from app.services.portal import (
     messages,
     save_feedback,
     save_garmin_login,
+    save_workout_account,
     save_goal,
     save_lactate,
     save_race,
@@ -83,6 +84,10 @@ class ManualActivityIn(BaseModel):
     average_heart_rate_bpm: float | None = None
     notes: str | None = None
     workout_type: str | None = None
+
+
+class AccountIn(BaseModel):
+    message: str = Field(min_length=8, max_length=4000)
 
 
 class ActivityEditIn(BaseModel):
@@ -364,6 +369,27 @@ def portal_edit_activity(
         return edit_activity(db, _athlete(db, settings, athlete_id), garmin_activity_id, changes=changes)
     except PortalInputError as exc:
         raise _input(exc) from exc
+
+
+@router.post("/api/portal/{athlete_id}/activities/{garmin_activity_id}/account")
+def portal_workout_account(
+    athlete_id: int,
+    garmin_activity_id: int,
+    body: AccountIn,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    if not gemini_ready(settings):
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "gemini_not_configured", "message": "The workout account was not stored."},
+        )
+    try:
+        return save_workout_account(db, settings, _athlete(db, settings, athlete_id), garmin_activity_id, body.message)
+    except PortalInputError as exc:
+        raise _input(exc) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail={"code": "gemini_error", "message": "The workout account was not stored."}) from exc
 
 
 @router.post("/api/portal/{athlete_id}/feedback")

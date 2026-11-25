@@ -250,9 +250,12 @@ def _plan(session: Session, athlete_id: int, today: date) -> dict:
 
 def _activity_summary(activity: Activity) -> dict:
     notes = None
+    account = None
     overrides = activity.athlete_overrides or {}
     if isinstance(overrides, dict):
         notes = overrides.get("notes")
+        stored = overrides.get("account")
+        account = stored if isinstance(stored, dict) else None
     miles = None if activity.distance_meters is None else activity.distance_meters / METERS_PER_MILE
     pace = pace_seconds_per_mile(activity.average_speed_mps)
     return {
@@ -265,6 +268,7 @@ def _activity_summary(activity: Activity) -> dict:
         "average_heart_rate_bpm": activity.average_heart_rate_bpm,
         "manual": bool(activity.manual_activity) or activity.garmin_activity_id < 0,
         "notes": notes if isinstance(notes, str) else None,
+        "account": account,
     }
 
 
@@ -729,6 +733,145 @@ def edit_activity(
     session.commit()
     session.refresh(activity)
     return _activity_summary(activity)
+
+
+ACCOUNT_PROMPT = """Turn one athlete's description of a completed workout into the account to store.
+Use only facts the athlete stated. The recorded file can be wrong, especially on a treadmill, so do not copy a recorded pace or split unless the athlete repeats it.
+Do not invent a distance, a duration, a heart rate, a pace, or a split. Leave a number null when the athlete did not state it.
+summary is their account in one short paragraph, with no advice. splits are the efforts they described, in the order they gave them.
+pace is the pace they named, such as 6:30, or null. duration_seconds is seconds. label is a short name from their words, such as "800m rep" or "warmup"."""
+
+ACCOUNT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "summary": {"type": "string"},
+        "distance_miles": {"type": ["number", "null"]},
+        "duration_seconds": {"type": ["number", "null"]},
+        "average_heart_rate_bpm": {"type": ["number", "null"]},
+        "splits": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "label": {"type": "string"},
+                    "distance_miles": {"type": ["number", "null"]},
+                    "duration_seconds": {"type": ["number", "null"]},
+                    "pace": {"type": ["string", "null"]},
+                },
+                "required": ["label", "distance_miles", "duration_seconds", "pace"],
+            },
+        },
+    },
+    "required": ["summary", "distance_miles", "duration_seconds", "average_heart_rate_bpm", "splits"],
+}
+
+
+def save_workout_account(
+    session: Session,
+    settings: Settings,
+    athlete: Athlete,
+    garmin_activity_id: int,
+    message: str,
+    *,
+    complete=None,
+) -> dict:
+    """Store the athlete's own account of a workout. The recorded file is left in place."""
+    import json
+
+    text = " ".join(message.split())
+    if len(text) < 8:
+        raise PortalInputError("Describe what you actually did.")
+    activity = _owned_activity(session, athlete, garmin_activity_id)
+    recorded = _activity_summary(activity)
+    caller = complete
+    if caller is None:
+        from app.coach.gemini import complete_messages
+
+        caller = complete_messages
+    raw = caller(
+        settings,
+        model=settings.gemini_model,
+        messages=[
+            {"role": "system", "content": ACCOUNT_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    f"Recorded name: {recorded.get('name') or 'Run'}. "
+                    f"Recorded distance miles: {recorded.get('distance_miles')}. "
+                    f"Recorded duration seconds: {recorded.get('duration_seconds')}. "
+                    f"Athlete says: {text}"
+                ),
+            },
+        ],
+        response_format={"type": "json_schema", "json_schema": {"name": "workout_account", "strict": True, "schema": ACCOUNT_SCHEMA}},
+        reasoning_effort="low",
+    )
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise PortalInputError("The workout account was not stored.") from exc
+    account = _clean_account(parsed if isinstance(parsed, dict) else {}, text)
+    if not account["summary"] and not account["splits"]:
+        raise PortalInputError("That did not include a workout detail to store.")
+    overrides = dict(activity.athlete_overrides or {})
+    overrides["account"] = account
+    activity.athlete_overrides = overrides
+    flag_modified(activity, "athlete_overrides")
+    changes: dict = {"notes": account["summary"]}
+    if account["distance_miles"] is not None:
+        changes["distance_miles"] = account["distance_miles"]
+    if account["duration_seconds"] is not None:
+        changes["duration_seconds"] = account["duration_seconds"]
+    if account["average_heart_rate_bpm"] is not None:
+        changes["average_heart_rate_bpm"] = account["average_heart_rate_bpm"]
+    return edit_activity(session, athlete, garmin_activity_id, changes=changes)
+
+
+def _clean_account(parsed: dict, statement: str) -> dict:
+    splits = []
+    for item in parsed.get("splits") or []:
+        if not isinstance(item, dict) or len(splits) >= 40:
+            continue
+        label = " ".join(str(item.get("label") or "").split())[:80]
+        pace = item.get("pace")
+        pace_text = None if not isinstance(pace, str) else " ".join(pace.split())[:12] or None
+        distance = _positive(item.get("distance_miles"), 100)
+        duration = _positive(item.get("duration_seconds"), 86400)
+        if not label and pace_text is None and distance is None and duration is None:
+            continue
+        splits.append(
+            {
+                "label": label or "Effort",
+                "distance_miles": distance,
+                "duration_seconds": duration,
+                "pace": pace_text,
+            }
+        )
+    summary = " ".join(str(parsed.get("summary") or "").split())[:1200]
+    if not summary and splits:
+        summary = "; ".join(
+            " ".join(part for part in (item["label"], None if item["pace"] is None else f"at {item['pace']}") if part)
+            for item in splits
+        )[:1200]
+    return {
+        "statement": statement[:4000],
+        "summary": summary,
+        "distance_miles": _positive(parsed.get("distance_miles"), 100),
+        "duration_seconds": _positive(parsed.get("duration_seconds"), 86400),
+        "average_heart_rate_bpm": _positive(parsed.get("average_heart_rate_bpm"), 230),
+        "splits": splits,
+    }
+
+
+def _positive(value: object, limit: float) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    if number <= 0 or number > limit:
+        return None
+    return number
 
 
 def activity_detail(session: Session, settings: Settings, athlete: Athlete, garmin_activity_id: int) -> dict:

@@ -135,6 +135,32 @@ export default function ActivityDetailPage() {
         </CardContent>
       </Card>
 
+      {activity.athlete_account ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Athlete&apos;s account</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <p>{activity.athlete_account.summary}</p>
+            {Array.isArray(activity.athlete_account.splits) ? (
+              <ul className="space-y-1 text-muted-foreground">
+                {activity.athlete_account.splits.map((split, index) => {
+                  const row = split as { label?: string; distance_miles?: number | null; pace?: string | null };
+                  return (
+                    <li key={`${row.label ?? "effort"}-${index}`}>
+                      {row.label || "Effort"}
+                      {typeof row.distance_miles === "number" ? ` · ${row.distance_miles.toFixed(2)} mi` : ""}
+                      {row.pace ? ` · ${row.pace}/mi` : ""}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+            <p className="text-muted-foreground">Stored from what the athlete said. The recorded file is unchanged.</p>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <DetectedWorkout metrics={detail.metrics} />
 
       <Card>

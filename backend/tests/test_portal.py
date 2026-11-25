@@ -1,5 +1,6 @@
 """Athlete portal records stay on the same athlete the coach already sees."""
 
+import json
 from datetime import UTC, date, datetime
 
 from sqlalchemy import create_engine, select
@@ -21,6 +22,7 @@ from app.services.portal import (
     save_feedback,
     save_garmin_login,
     save_race,
+    save_workout_account,
 )
 from app.services.sync import reapply_athlete_overrides
 
@@ -101,6 +103,49 @@ def test_manual_edits_survive_a_later_garmin_overwrite() -> None:
         stored.distance_meters = 1000
         reapply_athlete_overrides(stored)
         assert stored.distance_meters == 6.2 * 1609.344
+
+
+def test_an_athletes_account_is_stored_and_kept_after_the_file_changes() -> None:
+    def complete(_settings, **_kwargs):
+        return json.dumps(
+            {
+                "summary": "The treadmill pace was off. Six 800s were at 6:30 with 90 seconds easy.",
+                "distance_miles": 6.1,
+                "duration_seconds": None,
+                "average_heart_rate_bpm": None,
+                "splits": [{"label": "800m rep", "distance_miles": 0.5, "duration_seconds": 195, "pace": "6:30"}],
+            }
+        )
+
+    with _session() as session:
+        athlete = join_athlete(session, get_settings(), _intake())
+        logged = log_manual(
+            session,
+            athlete,
+            name="Treadmill",
+            start_day=date(2026, 11, 24),
+            start_time="06:00",
+            distance_miles=5,
+            duration_seconds=3000,
+            heart_rate=150,
+            notes=None,
+            workout_type="intervals",
+        )
+        saved = save_workout_account(
+            session,
+            get_settings(),
+            athlete,
+            logged["garmin_activity_id"],
+            "The treadmill pace was off. I ran 6x800 at 6:30 with 90 seconds easy, 6.1 miles.",
+            complete=complete,
+        )
+        assert saved["distance_miles"] == 6.1
+        assert saved["account"]["splits"][0]["pace"] == "6:30"
+        assert "treadmill" in saved["notes"].lower()
+        stored = session.scalar(select(Activity).where(Activity.athlete_id == athlete.id))
+        stored.distance_meters = 1000
+        reapply_athlete_overrides(stored)
+        assert stored.distance_meters == 6.1 * 1609.344
 
 
 def test_feedback_race_prediction_and_message() -> None:
